@@ -176,16 +176,177 @@ Metadata(=Data Dictionary) : Table Schema & Stored Program
   - *.sdi 파일로 저장, 직렬화를 위한 포맷
 
 # InnoDB Storage Engine Architecture
+```text
+Record 기반의 잠금 제공
+-> 높은 동시성 처리 가능 / 안정적 / 성능 Good!
+```
+![img.png](src/innodb.png)
+
 ## 1. Clustering by Primary Key
+```text
+InnoDB의 모든 테이블은 PK를 기준으로 클러스터링되는 특징
+```
+- PK 값의 순서대로 디스크에 저장
+- PK를 이용하므로 빠른 스캔
+- 이에 따라 optimizer에서 query 실행 계획 시 PK의 비중이 높음
+
 ## 2. Supporting Foreign Key
+- InnoDB 엔진 레벨에서 FK 지원
+  - MyISAM, Memory 에서는 지원하지 않음
+- 시스템 변수를 조절하여 FK 관계 체크를 중지할 수 있음
+  - FK 체크 해제 시에도 데이터의 정합성, 일관성은 유지 필요
+
 ## 3. MVCC(Multi Version Concurrency Control)
-## 4. Non-Locking Consistent Read
+- Multi Version?
+  - 하나의 record에 여러 버전이 관리됨
+- record 레벨의 transaction 지원하는 DBMS가 제공 : 잠금을 사용하지 않는 일관된 읽기 제공
+- InnoDB는 Undo Log를 통해 구현
+
+### Example of MVCC
+```sql
+# 새로운 record 삽입
+INSERT INTO member (m_id, m_name, m_area) VALUES (12, '홍길동', '서울');
+COMMIT
+
+# m_id가 12인 record의 m_area 변경 후 COMMIT 실행 X
+UPDATE member SET m_area='경기' WHERE m_id=12;
+
+# UPDATE문의 COMMIT이 이루어 지기 전, 아래 SELECT문을 실행하면 어떤 값이 어떻게 올까?
+SELECT * FROM member WHERE m_id=12;
+```
+- 위를 대강 그림으로 표현하면 아래와 같다.
+![img.png](src/mvcc.png)
+- SELECT문 실행 시 가져오는 값은 Isolation level(격리 수준)에 따라 다름
+  - READ_UNCOMMITTED : InnoDB 버퍼 풀 내의 데이터(12, 홍길동, **경기**)
+  - READ_COMMITTED, REPEATABLE_READ, SERIALIZABLE : Undo Log 내의 데이터(12, 홍길동, **서울**)
+- COMMIT 실행 시, InnoDB 버퍼 풀의 내용을 영구적으로 저장
+  - Undo Log(=Undo 영역)를 더 이상 필요로 하는 transaction이 없을 때 삭제
+- ROLLBACK 실행 시, Undo 영역의 데이터를 InnoDB 버퍼 풀로 복구
+  - Undo 영역 내용 삭제
+
+### Ref) Isolation Level<sup>[5]</sup>
+- READ_UNCOMMITTED : 어떤 transaction의 commit 되지 않은 데이터도 다른 transaction이 볼 수 있음
+- READ_COMMITTED : 어떤 transaction의 commit 된 데이터만 다른 transaction이 볼 수 있음
+- REPEATABLE_READ : 어떤 transaction이 시작되기 전에 commit된 내용에 대해서만 다른 transaction이 조회 가능
+- SERIALIZABLE : SELECT 문에도 공유 잠금
+
+## 4. Non-Locking Consistent Read(잠금 없는 일관된 읽기)
+![img.png](src/non_locking_read.png)
+- 격리 수준이 SERIALIZABLE인 경우를 제외하고는 읽기 작업 시 잠금을 대가하지 않고 즉시 실행
+- COMMIT 수행 전에도 변경 transaction이 다른 클라이언트의 SELECT 작업을 방해하지 않음
+- InnoDB에서는 변경 전의 데이터를 읽기 위해 Undo Log 활용
+
 ## 5. Automatic Detection of Deadlock
+### Deadlock 감지 thread
+- InnoDB는 잠금의 교착 상태 여부 확인을 위해 잠금 대기 목록을 graph로 관리
+- 잠금 대기 graph는 **데드락 감지 스레드**로 검사
+  - 교착 상태에 빠진 transaction 중 하나를 강제 종료
+  - Undo Log record가 적은 transaction을 종료
+- MySQL 엔진에서 관리되는 테이블 잠금 확인 불가
+  - innodb_table_locks 시스템 변수 활성화 : 테이블 레벨의 잠금 감지 가능
+- 데드락 감지 스레드는 잠금 상태가 변경되지 않도록 잠금 테이블(잠금 목록이 저장된 리스트)에 잠금을 걸고 데드락 스레드를 찾음
+  - 이런 데드락 감지 스레드가 느려지면 서비스 쿼리 처리 스레드는 대기
+    - ex) 동시 처리 스레드가 많아 느려지거나..
+### 데드락 감지 스레드 멈추기
+- innodb_deadlock_detect를 OFF로 하면 데드락 감지 스레드가 작동하지 않음
+  - 단, 데드락이 발생해도 중재가 없으므로 무한정 대기
+  - time out을 지정할 수 있는 별도의 시스템 변수를 설정하여 오류 반환
+
 ## 6. Automatic Fault Recovery
+- InnoDB 데이터 파일은 MySQL 시작 시 자동 복구 수행
+  - 자동 복구가 불가능한 경우 서버 종료
+  - innodb_force_recovery 변수를 설정하여 서버 시작
+
+### innodb_force_recovery
+```text
+MySQL 서버 시작 시, InnoDB 스토리지 엔진이 파일 손상 여부 검사 과정을 선별적 진행
+```
+- InnoDB 로그 파일 손상 시에는 6으로 설정, 테이블의 데이터 파일 손상 시 1으로 설정
+- 어디가 문제인지 모르겠다면 1 ~ 6까지 오름차순으로 변경
+  - 값이 커질수록 심각한 상황
+- 0이 아닐 경우에는 SELECT 문 이외에는 쿼리 수행 불가
+- innodb_force_recovery의 6까지 설정해도 되지 않는다면, 백업으로 재구축 필요
+  - 마지막 백업 본 혹은 바이너리 로그를 이용하여 데이터 복구
+
+### Levels of innodb_force_recovery
+1. SRV_FORCE_IGNORE_CORRUPT
+   - Table space의 데이터나 index page에서 손상된 부분이 있어도 무시
+   - dump하여 데이터베이스 재구축
+2. SRV_FORCE_NO_BACKGROUND
+   - Background 스레드 중 메인 스레드를 시작하지 않음
+   - 메인 스레드가 undo data를 삭제하는 과정에서 장애 발생 시 사용
+3. SRV_FORCE_NO_TRX_UNDO
+   - Commit 되지 않은 transaction의 작업을 rollback하지 않고 그대로 둠
+   - 서버 시작 시 mysqldump를 사용하여 데이터베이스 재구축
+4. SRV_FORCE_NO_IBUF_MERGE
+   - MySQL 재시작 시 insert buffer의 손상 감지 시 InnoDB에서 에러 반환, 서버 시작 불가
+   - 4로 설정 시, insert buffer를 무시
+   - 테이블을 덤프 후 데이터베이스 재구축
+5. SRV_FORCE_NO_UNDO_LOG_SCAN
+   - Undo Log를 사용하지 못할 시 설정 : Undo Log를 무시하고 시작
+   - 서버가 종료되는 시점에 commit 되지 않은 작업도 모두 commit 된 것처럼 처리
+   - mysqldump로 데이터 백업 후, 데이터베이스 재구축
+6. SRV_FORCE_NO_LOG_REDO
+   - Redo Log 손상 시, 이를 무시하고 시작
+     - Commit이 됐더라도 Redo Log에만 기록되고 데이터 파일에 기록되지 않은 데이터 무시
+   - 기존 Redo Log를 삭제 혹은 다른 곳에 백업 후 서버 재시작
+   - mysqldump로 데이터 백업하여 서버를 새로 구축
+
 ## 7. InnoDB Buffer Pool
+```text
+디스크의 데이터 파일이나 인덱스 정보를 메모리에 caching
+쓰기 작업을 지연시켜 일괄 작업으로 처리하는 buffer
+```
+- SELECT 문을 제외한 데이터 변경 쿼리는 데이터 파일 내의 산재한 곳에 위치한 레코드 변경
+  - 랜덤한 디스크 작업 발생
+  - Buffer pool은 이런 데이터를 모아서 처리하므로 랜덤한 디스크 작업 횟수 감소
+
 ### Configuring Size of Buffer Pool
+- Record Buffer?
+  - Client session에서 record를 읽고 쓸 때 buffer로 사용하는 공간
+  - connection과 사용 table에 비례하여 사용하는 메모리 공간이 커짐
+  - MySQL 서버가 사용하는 record buffer 공간은 조절 불가능
+- InnoDB buffer pool은 조절 가능
+  - Buffer pool의 크기 변경은 크리티컬함
+  - 작은 값에서 큰 값으로 상황에 따라 증가시킴 : buffer pool의 크기를 감소시키는 것은 절대 NO
+  - 크면 클수록 query 성능이 빨라짐
+- InnoDB buffer pool의 크기 조절 단위 : 128MB
+- Buffer pool 전체 관리 잠금(세마포어)로 인한 잠금 경합을 줄이기 위해 **buffer pool을 여러 개로 나누어 관리 가능**
+  - 세마포어 자체의 경합도 분산되는 효과
+
 ### Structure of Buffer Pool
+- InnoDB는 buffer pool을 페이지 크기라는 조각으로 쪼갬
+  - InnoDB에서 데이터를 필요로 할 때 해당 데이터 페이지를 읽어 각 조각에 저장
+- Buffer pool의 페이지 크기 조각을 관리하기 위한 3가지의 자료 구조
+  1. Free list
+     - 데이터가 없는 비어있는 페이지 목록
+     - 디스크의 데이터 페이지를 새롭게 읽어야 할 때 사용
+  2. Flush list
+     - Dirty page의 변경 시점 기준의 페이지 목록 관리
+       - Dirty page : 디스크 -> buffer pool로 가져온 후에 변경된 데이터를 가진 페이지<sup>[6]</sup>
+       - 동기화 되지 않은 데이터가 있는 데이터 페이지
+  3. LRU list
+     - 디스크로부터 한번 읽어온 페이지를 최대한 오래 InnoDB buffer pool에 유지 -> **디스크 읽기 최소화**
+
+**LRU list 이해하기**
+- Least Recently Used + Most Recently Used(MRU) list가 결합된 형태
+- LRU = Old 서브리스트, MRU = New 서브리스트
+![img.png](src/lru_list.png)
+1. 새로운 페이지는 8칸 중 5번째에 배정
+2. 이미 buffer pool에 있는 데이터라면, MRU 방향으로 승급
+3. 접근하지 않으면 나이가 오래되고, buffer pool에서 제거
+
 ### Buffer Pool & Redo Log
+- Buffer pool 크기 늘리기 = 데이터 캐시 기능 향상
+- 쓰기 버퍼링 기능을 향상 시키기 위해 Redo Log와 밀접한 연관
+- Redo Log?
+  - 데이터 변경 시, 변경 내용을 기록하는 곳
+  - 리두 로그의 엔트리는 기록된 변경 사항이 적용되는 특정 디스크 페이지와 연결
+
+![img.png](src/redo_log.png)
+- Buffer pool = Clean page + Dirty page
+- Dirty page가 buffer pool에 계속 있을 수는 없음
+
 ### Buffer Pool Flush
 ### Back up & Restoration of Buffer Pool's Status
 ### Check Buffer Pool's stored content
@@ -215,4 +376,5 @@ Metadata(=Data Dictionary) : Table Schema & Stored Program
 [2] https://velog.io/@j_6367/MYSQL.-Handler-API%EC%99%80-Status
 [3] https://dev.mysql.com/doc/dev/mysql-server/latest/PAGE_COMPONENTS.html
 [4] https://escapefromcoding.tistory.com/710
-[picture] https://letsmakemyselfprogrammer.tistory.com/62
+[5] https://joont92.github.io/db/%ED%8A%B8%EB%9E%9C%EC%9E%AD%EC%85%98-%EA%B2%A9%EB%A6%AC-%EC%88%98%EC%A4%80-isolation-level/
+[6] https://neverfadeaway.tistory.com/61
