@@ -341,35 +341,234 @@ MySQL 서버 시작 시, InnoDB 스토리지 엔진이 파일 손상 여부 검�
 - 쓰기 버퍼링 기능을 향상 시키기 위해 Redo Log와 밀접한 연관
 - Redo Log?
   - 데이터 변경 시, 변경 내용을 기록하는 곳
+  - 장애 발생 시 복구에 사용됨<sup>[7]</sup>
   - 리두 로그의 엔트리는 기록된 변경 사항이 적용되는 특정 디스크 페이지와 연결
 
 ![img.png](src/redo_log.png)
+![img.png](src/redo_log2.png)
 - Buffer pool = Clean page + Dirty page
 - Dirty page가 buffer pool에 계속 있을 수는 없음
+  - 이를 해결하기 위하여 Redo Log에 내려 보냄
+- Redo Log는 순환 구조로 기록함
+  - Redo Log Buffer에 변경된 내용을 기록<sup>[8]</sup>
+  - 일정 시간이 지나 checkpoint라는 이벤트가 발생하면 Redo Log File로 디스크에 기록
+  - 2개로 구성된 Redo log file 중, 1개가 가득 차면 다른 파일로 스위칭함
+    - 이 때, checkpoint 발생 : Buffer Pool의 내용을 디스크로 기록
+  - 그래서 이 두 파일은 계속 순환되면서 덮어쓰이는 상황, 즉 재사용 됨
+    - 기록 될 때마다 로그 포지션은 계속 증가 : Log Sequence Number
+    - 가장 최근 checkpoint 지점의 LSN이 활성 Redo Log 공간의 시작점
+    - 가장 최근의 checkpoint의 LSN ~ 마지막 Redo Log Entry의 LSN 차이 = checkpoint age
+      - =활성 Redo Log 공간
+- Redo Log도 당장 재사용이 불가능한 공간(=활성 Redo 공간)과 재사용 가능한 공간이 있음
+- Buffer pool의 dirty page는 특정 redo log entry와 연관 관계 O
+  - checkpoint 발생 시 LSN보다 작은 redo log entry 및 이와 관련된 dirty page는 디스크로 동기화
 
 ### Buffer Pool Flush
+- 디스크에 기록되지 않은 dirty page를 성능에 문제 없도록 디스크에 동기화 하는 flush 기능 제공 by background
+  - Flush list FLUSH
+  - LRU list FLUSH
+
+**Flush list FLUSH**
+- InnoDB는 주기적으로 오래된 redo log entry가 사용하는 공간을 비움
+  - Buffer pool의 dirty page가 먼저 디스크로 동기화 필요
+  - 주기적으로 flush list의 flush 함수를 호출하여 오래전에 변경된 데이터 페이지를 먼저 디스크에 동기화
+- Cleaner thread
+  - Dirty page를 디스크로 동기화 하는 thread
+  - 일정 수준 이상의 dirty page 발생 시 조금씩 디스크로 기록
+- Adaptive flush
+  - 여러 MySQL 사용 시, dirty page 비율이나 설정값에 의존하지 않고 redo log 증가 속도를 분석
+    - 적절한 dirty page가 buffer pool에 유지 될 수 있도록 디스크 쓰기 진행
+
+**LRU list FLUSH**
+- LRU 리스트에서 사용 빈도가 낮은 데이터 페이지를 제거
+- LRU 리스트의 끝부분부터 시작하여 시스템 변수에 설정된 개수만큼 페이지 스캔
+  - 스캔을 하면서 dirty page는 디스크에 동기화, clean page는 Free list로 이동
+
 ### Back up & Restoration of Buffer Pool's Status
+- Warming Up : 디스크의 데이터가 buffer pool에 적재되어 있는 상황
+- MySQL 서버 종료 전, 현재 InnoDB buffer pool의 상태 백업(5.6 버전부터)
+  - Buffer pool의 LRU 리스트에 적재된 데이터 페이지의 메타 정보만 가져와 저장 : lightweight!
+  - 백업 자체는 빠르나, 백업된 buffer pool의 내용을 buffer pool로 복구하는 것은 자원이 많이 들어갈 수도
+- InnoDB는 자동으로 백업된 buffer pool을 복구하는 기능 제공
+
 ### Check Buffer Pool's stored content
+- 8.0부터 information_schema.innodb_cached_indexes에서 확인 가능
+
 ## 8. Double Write Buffer
+![img.png](src/double_write.png)
+- Dirty page를 디스크 파일로 flush 시, 일부만 기록이 될 수 있는 문제가 있음
+  - 이를 해결하기 위해 Double Write 기법 이용
+- Dirty page를 묶어서 디스크 쓰기 한 번으로 시스템 테이블스페이스의 DoubleWrite 버퍼에 기록
+  - 실제 데이터 파일에 해당 dirty page 내용들이 정상적으로 기록되면 필요 없어짐
+
 ## 9. Undo Log
+- DML(INSERT, UPDATE, DELETE) 실행 시 이전 버전의 데이터를 Undo Log로 백업
+- Undo Log는 **트랜잭션 보장** 및 **격리 수준 보장**을 위해 사용
+  - rollback 시 Undo log에서 복원
+  - transaction의 commit 전, 다른 transaction에서 조회 시, Undo Log의 데이터 반환
+
 ### Monitoring of Undo Log
-### Management of Undo Table Space
+- transaction이 완료 됐다고 해서 그 때 생성한 Undo Log를 바로 삭제 X
+  - 서로 다른 transaction이 타이밍에 맞게 변경된 레코드를 조회하고 있다면 계속 유지되어야 함
+- transaction을 계속 방치해도 Undo Log가 쌓임
+
+### Management of Undo Tablespace
+- Undo Tablespace : Undo Log가 저장되는 공간
+- 1개의 Undo tablespace는 1~128개의 rollback segment를 가짐
+  - rollback segment는 1개 이상의 Undo Slot을 가짐
+- Undo tablespace truncate : 불필요한 공간 제거
+  - 자동 : purge thread가 주기적으로 커밋되어 복사가 완료된 Undo Log 삭제(Undo purge)
+  - 수동 : Undo tablespace를 비활성화 하면 purge thread가 삭제
+    - Undo tablespace가 3개 이상 되어야 작동
+
+### MySQL 8.0부터의 변화
+1. 이전과 다르게 Undo Log를 돌아가며 순차적으로 사용하여 디스크를 아낌 
+   - 필요한 시점에 공간을 줄여주기도 함 
+   - 그럼에도 꾸준한 모니터링이 필요
+2. Undo Log를 시스템 테이블 스페이스 외부에 별도 로그 파일에 기록
+3. 새로운 Undo tablespace를 동적으로 추가/삭제 가능
+
 ## 10. Change Buffer
+- InnoDB의 buffer pool에 없는 인덱스 변경 작업 시, 임시 공간에 저장
+  - 이 임시 공간이 **change buffer**이며, 이 곳의 내용을 사용자에게 반환
+- 중복 여부 체크가 필수인 Unique index는 사용 불가
+- Merge Thread : Change buffer의 내용이 background thread에 병합
+- 이전에는 INSERT 작업 시에만 사용했으나, 8.0부터는 INSERT, UPDATE, DELETE로 인한 키 추가/삭제 시에도 버퍼링
+- 작업의 종류 별로 change buffer 활성화 혹은 아예 사용하지 않게도 설정 가능
+
 ## 11. Redo Log & Log Buffer
+```text
+Redo Log는 ACID 중 Durable(영속성)과 밀접함!
+왜냐면, 데이터 파일에 기록이 안된 데이터를 복구하기 위함
+```
+- 변경된 데이터를 디스크에 기록하는 것은 큰 비용이 필요
+  - 따라서, 쓰기 비용이 낮은 자료구조인 Redo Log가 있음
+  - 비정상 종료 발생 시, Redo Log의 내용을 읽어 서버 종료 전의 상태로 복구
+- transaction commit 시 즉각적으로 디스크에 기록
+  - commit 내용이 Redo Log에 기록되어 빠른 복구 가능
+  - 하지만 부하가 많아서 어느 주기로 동기화 할지 아래의 표를 참고
+
+**Redo Log 동기화 수준 by innodb_flush_log_at_trx_commit**
+0. 1초에 한 번씩 Redo Log를 디스크로 기록 및 동기화
+1. 트랜잭션 커밋 시마다 디스크 기록 및 동기화
+2. 트랜잭션 커밋 시에 기록은 되지만 동기화는 1초에 한 번씩
+
+**비정상 종료 시 복구 방법**
+1. Commit 완료, 데이터 파일에 기록 X
+   - Redo Log 데이터를 데이터 파일에 복사
+2. Rollback 완료, 데이터 파일에 기록
+   - Undo Log 데이터를 데이터 파일에 복사
+   - Redo Log를 통해 변경의 커밋/롤백/transaction 진행 중의 여부인지 확인
+
 ### Archiving for Redo Log
+- 8.0부터 제공함 : 데이터 변경이 많아 Redo Log가 덮여쓰여져도 백업 실패를 막아줌
+  - Redo Log 내용을 추적하며 새로 추가된 Redo Log Entry 복사
+  - archiving file을 알아서 삭제하지는 않기 때문에 사용 완료 시 수동 삭제 필요
+
 ### Activation & De-activation of Redo Log
+- Redo Log는 항상 디스크로 기록됨
+- 8.0부터는 이를 비활성화 하여 Redo Log의 적재 시간 단축 가능
+
 ## 12. Adaptive Hash Index
-## 13. Comparison between InnoDB, MyISAM and Memory
+- 수동으로 만들어주는 B-Tree index와 다르게 InnoDB에서 자주 요청하는 데이터에 대해 생성
+  - Adaptive hash index에 있는 경우 B-Tree 순회 비용이 없어짐
+  - 루트 노드로부터의 순회를 하지 않으므로 InnoDB 내부 잠금(세마포어) 횟수 줄음
+- 자주 읽히는 데이터 페이지의 key 값을 이용하여 해시 인덱스 만듬
+- 필요할 때마다 adaptive hash index를 검색하여 빠르게 찾아감
+- 인덱스의 키 값 : 데이터 페이지 주소의 쌍으로 관리
+  - 인덱스의 키 값 = B-Tree 인덱스 고유번호 + B-Tree 인덱스 실제 키 값
+- 8.0부터는 adaptive hash index도 파티션하여 내부 잠금 경합을 낮춤
+  - 파티션 개수가 많으면 더더욱 경합이 줄음
+
+### 도움이 되는 경우와 아닌 경우
+- Good!
+  - 디스크 읽기가 많지 않은 경우
+  - 동등 비교 및 IN 연산자를 사용한 검색이 많은 경우
+  - 쿼리가 데이터 중에서 일부 데이터에 집중되는 경우
+- Not Good..
+  - 디스크 읽기 많은 경우
+  - JOIN, LIKE 검색이 많은 경우
+  - 다양한 레코드를 폭 넓게 읽는 경우
+
+### Disadvantages
+1. 저장 공간 사용
+2. 활성화 되면 hash index의 효율이 없어도 계속 사용 -> 효율성 판단하고 비활성화 시키기
+3. 테이블 삭제, 변경 시 테이블의 모든 데이터 페이지의 내용을 hash index에서 제거가 필요
+   - 자원을 많이 소모함
 
 # MyISAM Storage Engine Architecture
+![img.png](src/myisam.png)<sup>[9]</sup>
 ## 1. Key Cache
+- InnoDB의 buffer pool과 유사한 역할
+  - index만을 대상으로 작동, 쓰기 작업에 대해서 부분적으로 버퍼링 역할
+- Key cache를 이용한 query 비율(=hit rate)를 99% 이상으로 유지하는 것이 좋음
+  - 그 미만이라면, key cache를 더 크게 설정
+- 제한 값 이상의 key cache 추가 할당 시, 별도의 이름이 붙은 key cache 공간 설정 필요
+  - 어떤 인덱스를 캐시할 지 반드시 MySQL에 전달 필요
+  ```
+  CACHE INDEX table IN additional_key_cache;
+  ```
+  
 ## 2. Cache & Buffer of OS
+- MyISAM의 인덱스는 Key cache를 이용하여 디스크 검색 없이 빠르게 검색
+- 그러나, 데이터는 key cache에 없으므로 디스크 읽기/쓰기 작업이 동반
+  - OS에서는 디스크 IO에 대해 파일에 대한 캐시/버퍼링 매커니즘이 있음
+  - 매번 디스크를 읽지는 않음
+- MyISAM의 경우에는 충분한 메모리가 확보 되어야 데이터 작업에 차질이 없음
+
 ## 3. Data files & Structure of Primary Key(Index)
+- MyISAM은 PK에 의한 클러스터링이 없이 데이터 파일을 heap 공간처럼 활용
+  - PK와 상관 없이 삽입 되는 순서대로 데이터 파일에 저장됨
+- 레코드의 물리적 주솟값은 ROWID
+  - PK와 secondary index는 ROWID 값을 포인터로 가짐
+
+### ROWID 종류
+1. 고정 길이
+   - MyISAM 테이블 생성 시, MAX_ROWS 옵션을 지정하면 그만큼의 레코드 수까지만 가질 수 있음
+   - ROWID는 4byte의 정수
+   - ROWID는 레코드의 INSERT된 순번
+2. 가변 길이
+   - MAX_ROWS 옵션 미기재 : 시스템 변수에 지정된 만큼의 범위 내에서 레코드 삽입 가능
+   - ROWID는 2~7byte 사용 가능
 
 # MySQL Log File
 ## 1. Error Log File
+1. MySQL 시작 시
+   - 설정 파일 변경, 이전에 비정상 종료 등으로 인하여 생김
+   - 특정 변수명 및 파라미터 값을 인식하지 못하는 경우에는 에러 메시지를 출력하고 시작을 할 수 없음
+2. 비정상 종료 시의 InnoDB transaction 복구
+   - InnoDB는 다시 시작되면서 완료되지 못한 transaction 정리
+     - 디스크에 기록 못한 데이터는 기록함
+   - 복구되지 못할 때는 에러 메시지 출력 후 MySQL 종료
+   - innodb_force_recovery 값을 0 보다 크게 설정하고 재시작 해보기
+3. Query 처리 도중에 발생하는 문제
+   - 쿼리 실행 중 발생한 에러
+   - 복제에서 문제가 될 만한 쿼리에 대한 경고 메시지
+4. 비정상적으로 종료된 connection
+   - Client application에서 정상적으로 MySQL 접속 종료를 못하고 프로그램이 종료된 경우
+   - app의 커넥션 종료 로직 검토
+5. InnoDB 모니터링 or 상태 조회 명령
+   - 모니터링 사용 이후에는 에러 로그 파일이 커지지 않게 비활성화
+6. MySQL 종료 메시지
+   - MySQL 종료 시, 종료 관련 메시지가 없거나 stack trace가 있다면 비정상 종료
+     - 이를 segmentation fault라고 명명함
+   - MySQL 버전 업그레이드 혹은 회피책을 검토
+
 ## 2. General Query Log File
+- 실행되는 모든 쿼리 목록을 보도록 쿼리 로그 활성화
+- 쿼리 요청 받을 시 바로 기록
+  - 에러가 발생해도 로그 파일에 기록됨
+
 ## 3. Slow Query Log
+- 시스템 변수에 설정한 시간 이상으로 소요된 쿼리가 기록
+- 정상적으로 실행이 완료되어야 기록됨
+
+### 제공 기능
+1. Slow query 통계
+   - 슬로우 쿼리 로그의 실행 시간, 잠금 대기 시간 등에 대해 평균/최소/최대 값 제공
+2. 실행 빈도, 누적 실행 시간 순 랭킹
+   - 별도의 파리미터로 정렬 순서 변경
+3. Query 별 실행 횟수 및 누적 실행 시간 상세 정보
 
 ## References
 [1] https://www.mysql.com/products/enterprise/document_store.html#:~:text=MySQL%20Document%20store%20gives%20users,schema%2Dfree%20document%20database%20applications.
@@ -378,3 +577,6 @@ MySQL 서버 시작 시, InnoDB 스토리지 엔진이 파일 손상 여부 검�
 [4] https://escapefromcoding.tistory.com/710
 [5] https://joont92.github.io/db/%ED%8A%B8%EB%9E%9C%EC%9E%AD%EC%85%98-%EA%B2%A9%EB%A6%AC-%EC%88%98%EC%A4%80-isolation-level/
 [6] https://neverfadeaway.tistory.com/61
+[7] https://velog.io/@pk3669/Mysql-Redo-Undo-Log
+[8] https://blog.naver.com/writer0713/222342927580
+[9] https://rrhh234cm.tistory.com/205
