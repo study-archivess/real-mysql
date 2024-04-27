@@ -6,7 +6,7 @@
 MySQL 서버는 크케 MySQL 엔진과 스토리지 엔진으로 구분할 수 있다.
 이 둘을 합쳐 MySQL 서버라 칭한다.
 
-![mysql-architecture.png](mysql-architecture.png)
+![mysql-architecture.png](images-hyunhwaoh/mysql-architecture.png)
 ---
 ### MySQL 엔진
 MySQL 엔진은 DBMS의 두뇌에 해당한다.
@@ -43,7 +43,7 @@ MySQL 엔진은 파일 시스템을 다루기 위해 핸들러 API를 생성한�
 ---
 ## 2. MySQL 스레딩 구조
 
-![mysql-thread.png](mysql-thread.png)
+![mysql-thread.png](images-hyunhwaoh/mysql-thread.png)
 
 프로세스 기반이 아닌 스레드 기반으로 동작한다.
 
@@ -71,7 +71,7 @@ MySQL 엔진은 파일 시스템을 다루기 위해 핸들러 API를 생성한�
 ---
 ## 3. 메모리 할당 및 사용 구조
 
-![memory.png](memory.png)
+![memory.png](images-hyunhwaoh/memory.png)
 
 글로벌 메모리 영역과 로컬 메모리 영역으로 구분한다.
 시스템 변수로 설정 해 둔 만큼 os에서 메로리를 할당받는다.
@@ -107,7 +107,7 @@ MySQL 엔진은 파일 시스템을 다루기 위해 핸들러 API를 생성한�
 ---
 ## 6. 쿼리 실행 구조
 
-![mysql-excute.png](mysql-excute.png)
+![mysql-excute.png](images-hyunhwaoh/mysql-excute.png)
 
 ---
 ## 7. 복제
@@ -176,9 +176,9 @@ read 연산 시 실제 테이블 값을 가져오지 않고, Undo 영역의 백�
 언두 영역을 필요로하는 트랜잭션이 존재하지않을때 삭제 된다.
 보통 언두 영역은 일정 크기로 유지 되므로 가장 오래된 언두 세그먼트는 제거되거나 설정에 의해 관리된다.
 
-![mysql-mvcc.png](mysql-mvcc.png)
+![mysql-mvcc.png](images-hyunhwaoh/mysql-mvcc.png)
 
-![mysql-mvcc2.png](mysql-mvcc2.png)
+![mysql-mvcc2.png](images-hyunhwaoh/mysql-mvcc2.png)
 
 ---
 ### 4. 잠금없는 일관된 읽기
@@ -186,7 +186,7 @@ read 연산 시 실제 테이블 값을 가져오지 않고, Undo 영역의 백�
 
 읽기 작업이 잠금을 기다리지 않고 가능하다.
 
-![mysql-consistent-read.png](mysql-consistent-read.png)
+![mysql-consistent-read.png](images-hyunhwaoh/mysql-consistent-read.png)
 
 ---
 ### 5. 자동 데드락 감지
@@ -254,7 +254,7 @@ LRU(Least Recently Used)와 MRU(Most Recently Used) 리스트가 결한된 형�
 목적은 디스크로부터 한번 읽어온 페이지를 최대한 오랫동안 버퍼풀의 메모리에 유지해서 읽기를 최소화 하는 것이다.
 New 서브리스트는 MRU 리스트, Old 서브리스트가 LRU 리스트이다.
 버퍼풀에서 자주 사용되는 페이지는 상위로 이동되고, 자주 쓰이지 않는 데이터는 하위로 이동한다.
-![bufferpool-lru-list.png](bufferpool-lru-list.png)
+![bufferpool-lru-list.png](images-hyunhwaoh/bufferpool-lru-list.png)
 
 ** InnoDB 에서 데이터를 찾는 과정
 1. 필요한 레코드가 저장된 페이지가 버퍼풀에 존재하는지 검사한다.
@@ -271,7 +271,7 @@ New 서브리스트는 MRU 리스트, Old 서브리스트가 LRU 리스트이다
 
 버퍼풀에는 변경사항이 디스크에 반영되지 않은 더티 페이지를 가지고 있다.
 디스크 반영을 위해 리두 로그를 이용하여 버퍼풀에 머무르지 않도록 관리한다.
-![redolog.png](redolog.png)
+![redolog.png](images-hyunhwaoh/redolog.png)
 
 리두 로그는 로그파일을 원형으로 구성하여 사용한다. 반영되어야 하는 내용들이 쌓이고, write pos 와 check point 가 만나면 다른 작업을 멈추고, 디스크에 내용들을 동기화 한다.
 
@@ -290,7 +290,7 @@ InnoDB는 더티 페이지들을 2개의 Flush 기능을 백드라운드로 실�
 버퍼풀의 더티 페이지를 디스크 파일로 플러시할 때 일부만 기록되는 Partial-page, Torn-page 문제가 발생할 수 이다.
 이런 문제를 해결하기 위해 Double-Write 기법을 이용한다.
 
-![double-write-buffer.png](double-write-buffer.png)
+![double-write-buffer.png](images-hyunhwaoh/double-write-buffer.png)
 
 각 페이지는 디스크에 랜덤하게 위치해 있기 때문에 변경작업을 하기 위해 각 페이지 위치를 찾아가야한다.
 따라서 디스크에 위치한 double write buffer에 한번의 디스크 I/O로 연속적으로 해당 내용들을 저장한다.
@@ -362,7 +362,7 @@ B-Tree의 고유 번호를 사용해 하나만 존재하도록 만든다.
 ## MyISAM 스토리지 엔진 아키텍처
 MyISAM 스토리지 엔진의 성능에 영향을 미치는 요소인 키 캐시와 운영체제의 캐시/버퍼
 
-![MyISAM-structure.png](MyISAM-structure.png)
+![MyISAM-structure.png](images-hyunhwaoh/MyISAM-structure.png)
 
 
 
