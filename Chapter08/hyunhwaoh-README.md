@@ -27,7 +27,7 @@ SSD 드라이브에서도 랜덤 I/O는 순차I/O 보다 스루풋이 떨어진�
 
 ## 3. B-Tree 인덱스
 인덱싱 알고리즘 가운데 가장 먼저 도입되었고, 가장 범용적으로 사용된다.</br>
-B+-Tree 또는 B*-Tree 가 사용된다. 
+B+-Tree 또는 B*-Tree 가 사용된다.
 "B" 는 Balanced 를 의미한다.</br>
 칼럼의 원래 값을 변형시키지 않고 인덱스 구조체 내에서는 항상 정렬된 상태로 유지한다.
 
@@ -35,13 +35,12 @@ B+-Tree 또는 B*-Tree 가 사용된다.
 트리 최상위에 하나의 Root node 그 하위에 자식노드.
 가장 하위에 있는 노드를 Leaf node, 중간 노드를 Branch node 라고 한다.
 
-![8.4.png](hyunhwaoh-images%2F8.4.png)
+<img src="https://github.com/study-archivess/real-mysql/blob/488fc2fa6e621a226d30770c90a67399679909d8/Chapter08/hyunhwaoh-images/8.4.png?raw=true" alt="8.4" width="800"/>
 
-
-인덱스와 실제 데이터 레코드는 따로 관리된다. 
+인덱스와 실제 데이터 레코드는 따로 관리된다.
 인덱스는 테이블의 키 칼럼만 가지고 있고, 인덱스의 리프 노드는 실제 데이터 레코드를 찾아가기 위한 주소를 가진다.
 
-MyISAM 테이블은 세컨더리 인덱스가 물리적인 주소를 가지는 반면, 
+MyISAM 테이블은 세컨더리 인덱스가 물리적인 주소를 가지는 반면,
 InnoDB 테이블은 프라이머리 키를 주소처럼 사용하기 때문에 논리적인 주소를 가진다.
 
 InnoDB 는 모든 세컨더리 인덱스 검색에서 데이터 레코드를 읽기 위해서는 반드시 프라이머리 키를 저장하는 B-Tree 를 다시 검색해야 한다.
@@ -49,39 +48,39 @@ InnoDB 는 모든 세컨더리 인덱스 검색에서 데이터 레코드를 읽
 ### B-Tree 인덱스 키 추가 및 삭제
 
 1) 인덱스 키 추가</br>
-저장될 키 값을 이용해 B-Tree 상의 적절한 위치를 검색, 위치가 결정되면 키 값과 대상 레코드 주소를 리프노드에 저장한다.
-리프 노드가 꽉차면 상위 노드까지 분리 처리 작업을 해야해서, 쓰기 비용이 많이 든다.</br>
-대략적으로 테이블에 레코드 추가 작업을 1이라고 하면, 인덱스 키 추가 작업 비용은 1.5로 비용 예측.
-체인지 버퍼를 이용해 지연처리 가능.
+   저장될 키 값을 이용해 B-Tree 상의 적절한 위치를 검색, 위치가 결정되면 키 값과 대상 레코드 주소를 리프노드에 저장한다.
+   리프 노드가 꽉차면 상위 노드까지 분리 처리 작업을 해야해서, 쓰기 비용이 많이 든다.</br>
+   대략적으로 테이블에 레코드 추가 작업을 1이라고 하면, 인덱스 키 추가 작업 비용은 1.5로 비용 예측.
+   체인지 버퍼를 이용해 지연처리 가능.
 
 
 2) 인덱스 티 삭제</br>
-해당 키 값이 저장된 B-Tree 리프 노드를 찾아 그냥 삭제 마크만 하면 작업 완료. 
-인덱스 키 공간은 계속 방치 또는 재활용됨.
+   해당 키 값이 저장된 B-Tree 리프 노드를 찾아 그냥 삭제 마크만 하면 작업 완료.
+   인덱스 키 공간은 계속 방치 또는 재활용됨.
 
 
 3) 인덱스 키 변경</br>
-키 값을 먼저 삭제한 후, 다시 새로운 키 값을 추가한다.
+   키 값을 먼저 삭제한 후, 다시 새로운 키 값을 추가한다.
 
 
 4) 인덱스 키 검색</br>
-빠른 검색을 위해 인덱스를 구축한다.
-인덱스를 검색하는 작업은 루트 노드부터 브랜치 노드를 거쳐 리프 노드까지 이동하면서 
-'트리 탐색' 비교작업을 수행한다.</br>
-InnoDB 테이블에서 지원하는 레코드 잠금이나 넥스트 키락이 검색을 수행한 인덱스를 잠근 후 
-테이블의 레코드를 잠그는 방식으로 구현되어 있어, 
-인덱스가 없으면 불필요하게 많은 레코드를 잠그므로 인덱스 설계를 잘해야한다.
+   빠른 검색을 위해 인덱스를 구축한다.
+   인덱스를 검색하는 작업은 루트 노드부터 브랜치 노드를 거쳐 리프 노드까지 이동하면서
+   '트리 탐색' 비교작업을 수행한다.</br>
+   InnoDB 테이블에서 지원하는 레코드 잠금이나 넥스트 키락이 검색을 수행한 인덱스를 잠근 후
+   테이블의 레코드를 잠그는 방식으로 구현되어 있어,
+   인덱스가 없으면 불필요하게 많은 레코드를 잠그므로 인덱스 설계를 잘해야한다.
 
 ### B-Tree 인덱스 사용에 영향을 미치는 요소
 
 1) **인덱스 키 값의 크기**</br>
-InnoDB 스토리지 엔진은 디스크에 데이터를 저장하는 읽고 쓰는 작업의 최소 작업 단위는 가장 기본단위를 페이지, 블록 이다.
-Binary 이진 트리는 각 노드가 2개의 자식노드를 가진다. B-Tree의 자식 노드 개수는 가변적이다.
-최대 자식노드는 인덱스의 페이지와 키 값의 크기에 따라 결정된다.
+   InnoDB 스토리지 엔진은 디스크에 데이터를 저장하는 읽고 쓰는 작업의 최소 작업 단위는 가장 기본단위를 페이지, 블록 이다.
+   Binary 이진 트리는 각 노드가 2개의 자식노드를 가진다. B-Tree의 자식 노드 개수는 가변적이다.
+   최대 자식노드는 인덱스의 페이지와 키 값의 크기에 따라 결정된다.
 
-![8.7.png](hyunhwaoh-images%2F8.7.png)
+<img src="https://github.com/study-archivess/real-mysql/blob/hyunhwaoh/chapter08/Chapter08/hyunhwaoh-images/8.7.png?raw=true" alt="8.7" width="300"/>
 
-키 값의 크기를 16K3B 자식 노드의 크기를 12KB라 하면 
+키 값의 크기를 16K3B 자식 노드의 크기를 12KB라 하면
 한페이지에 저장할 수 있는 키의 수는 16*1024/(32+12) = 585개 저장할 수 있다.
 키 값의 크기가 32KB로 늘어나면 한 페이지에 저장할 수 있는 갯수가 372개로 줄어든다.</br>
 select 쿼리로 레코드 500개를 읽어야 할때 전자의 경우 한 페이지로 끝나지만 후자는 최소 2번 이상 읽어야한다.
@@ -89,19 +88,19 @@ select 쿼리로 레코드 500개를 읽어야 할때 전자의 경우 한 페�
 인덱스를 구성하는 키 값의 크기가 커지면 느려지고, 그만큰 메모리에 캐시할 수 있는 레코드 수가 줄어드므로 메모리 효율이 떨어진다.
 
 2) **B-Tree 깊이**</br>
-인덱스 키값의 크기가 커지면 하나의 인덱스 페이지가 담을 수 있는 인덱스 키 값의 개수가 적어지고,</br>
-때문에 같은 레코드 건수라 해도 B-Tree 깊이가 깊어져서 디스크 읽기가 더 많이 필요하다.
+   인덱스 키값의 크기가 커지면 하나의 인덱스 페이지가 담을 수 있는 인덱스 키 값의 개수가 적어지고,</br>
+   때문에 같은 레코드 건수라 해도 B-Tree 깊이가 깊어져서 디스크 읽기가 더 많이 필요하다.
 
 3) **선택도 Selectivity (기수성 Cardinality)**</br>
-모든 인덱스 키 값 가운데 유니크한 값의 수를 의미한다.</br>
-전체 인덱스 키 값은 100개인데 그 중 유니크 값의 수는 10개면 기수성은 10.
-중복이 많아지면 기수성은 낮아지고 선택도도 떨어진다.
-인덱스는 선택도가 높을수록 검색 대상이 줄어 그만큼 빨리 처리된다.
+   모든 인덱스 키 값 가운데 유니크한 값의 수를 의미한다.</br>
+   전체 인덱스 키 값은 100개인데 그 중 유니크 값의 수는 10개면 기수성은 10.
+   중복이 많아지면 기수성은 낮아지고 선택도도 떨어진다.
+   인덱스는 선택도가 높을수록 검색 대상이 줄어 그만큼 빨리 처리된다.
 
 4) **읽어야 하는 레코드의 건수**</br>
-인덱스를 통해 레코드를 읽는것은 인덱스를 거치지 않는것보다 높은 비용이 든다.
-100만건 중 50만건을 읽을 때 전체 테이블을 모두 읽어 50만개를 버리는 것과,</br> 
-인덱스를 통해 50만건을 읽어오는 것중 어떤것이 효율적일지 판단해야한다.
+   인덱스를 통해 레코드를 읽는것은 인덱스를 거치지 않는것보다 높은 비용이 든다.
+   100만건 중 50만건을 읽을 때 전체 테이블을 모두 읽어 50만개를 버리는 것과,</br>
+   인덱스를 통해 50만건을 읽어오는 것중 어떤것이 효율적일지 판단해야한다.
 
 일반적인 DBMS 옵티마이저에서는 인덱스를 통해 레코드를 1건 읽는 것이 테이블에서 직접 레코드를 1건 읽는 것보다 4-5배 정보 비용이 더 드는 작업으로 예측한다.</br>
 인덱스를 통해 읽어야 할 레코드의 건수가 전체 테이블 레코드의 20-25% 를 넘어서면 인덱스를 이용하지 않고 테이블을 직접 읽어 필터링 하는 방식이 더 효율적이다.
@@ -109,39 +108,39 @@ select 쿼리로 레코드 500개를 읽어야 할때 전자의 경우 한 페�
 ### B-Tree 인덱스를 통한 데이터 읽기
 
 1) **인덱스 레인지 스캔**</br>
-인덱스 접근 방법 가운데 대표적인 접근 방법.
-인덱스를 통해 레코드를 한건만 읽는 경우와 한건 이상을 읽는 경우를 묶어 인덱스 레인지 스캔이라고 표현.
+   인덱스 접근 방법 가운데 대표적인 접근 방법.
+   인덱스를 통해 레코드를 한건만 읽는 경우와 한건 이상을 읽는 경우를 묶어 인덱스 레인지 스캔이라고 표현.
 
 ```sql
 SELECT * FROM employees WHERE first_name BETWEEN 'Ebbe' AND 'Gad';
 ```
 
-![8.8.png](hyunhwaoh-images%2F8.8.png)
+<img src="https://github.com/study-archivess/real-mysql/blob/hyunhwaoh/chapter08/Chapter08/hyunhwaoh-images/8.8.png?raw=true" alt="8.8" width="800"/>
 
 - 인덱스 레인지 스탠은 검색해야 할 인덱스의 범위가 결정됐을때 사용하는 방식.
-검색하려는 값의 수나 검색 결과 레코드 건수와 관계없이 레인지 스캔이라고 표현.
+  검색하려는 값의 수나 검색 결과 레코드 건수와 관계없이 레인지 스캔이라고 표현.
 - 루트노드에서 비교를 시작해 브랜치 노드를 거치고 최종적으로 리프 노드까지 찾아 들어가야 레코드의 시작 지점을 찾을 수 있다.
 - 시작 위치를 찾으면 리프노드의 레코드만 순서대로 읽으면 됨.
 - 순서대로 읽다 리프노드 끝에 다르면 리프노드간의 링크를 이용해 다름 리프노드를 찾아 다시 스캔.
 - 요구된 모든 데이터를 읽으면 반환.
 - 8.8은 실제 인덱스만 읽는 경우이다.
 
-![8.9.png](hyunhwaoh-images%2F8.9.png)
+<img src="https://github.com/study-archivess/real-mysql/blob/hyunhwaoh/chapter08/Chapter08/hyunhwaoh-images/8.9.png?raw=true" alt="8.9" width="800"/>
 
 **인덱스 레인지 스탠의 3단계**</br>
 1. 인덱스 탐색. 인덱스에서 값이 저장된 위치를 찾음.
 2. 인덱스 스캔. 1번의 위치부터 필요한 만큰 인덱스를 읽음.
 3. 2번에서 읽은 인덱스 키와 레코드 주소를 이용해 레코드가 저장된 Page를 가져오고 최종 레코드를 읽어옴.</br>
-이 과정은 필요하지 않을 수도 있어 성능이 빨라진다.(커버링 인덱스)
+   이 과정은 필요하지 않을 수도 있어 성능이 빨라진다.(커버링 인덱스)
 
 
 2) **인덱스 풀 스캔**</br>
 - 인덱스의 처음부터 끝까지 모두 읽은 방식
 - 쿼리 조건절에 사용된 컬럼이 인덱스의 첫번째 컬럼이 아닌경우 인덱스 풀 스캔 방식이 사용됨.
-- 일반적으로 인덱스 크기는 테이블 크기보다 작아 테이블 풀스캔보다 인덱스 풀스캔이 효율적이다. 
+- 일반적으로 인덱스 크기는 테이블 크기보다 작아 테이블 풀스캔보다 인덱스 풀스캔이 효율적이다.
 - 쿼리가 인덱스에 명시된 컬럼만으로 조건을 처리할때 주요 사용. 인덱스뿐 아니라 레코드까지 모두 읽어야 하면 이 방식으로 처리되지 않음.
 
-![8.10.png](hyunhwaoh-images%2F8.10.png)
+<img src="https://github.com/study-archivess/real-mysql/blob/hyunhwaoh/chapter08/Chapter08/hyunhwaoh-images/8.10.png?raw=true" alt="8.10" width="800"/>
 
 - 인덱스의 리프노드를 연결하는 Linked-List를 따라 처음부터 끝까지 스캔하는 방식이다.
 - 인덱스 레인지 스캔보다 느리지만 테이블 풀 스캔보다 효율적이다.
@@ -150,7 +149,8 @@ SELECT * FROM employees WHERE first_name BETWEEN 'Ebbe' AND 'Gad';
 - 인덱스 레인지 스캔과 비슷하지만 필요없는 인덱스 키 값은 무시하고 다음으로 넘어가는 형태.
 - Group by 또는 집합 함수 가운데 Max() 또는 Min() 함수에 대해 최적화를 하는경우 사용.
 
-![8.11.png](hyunhwaoh-images%2F8.11.png)
+
+<img src="https://github.com/study-archivess/real-mysql/blob/hyunhwaoh/chapter08/Chapter08/hyunhwaoh-images/8.11.png?raw=true" alt="8.11" width="400"/>
 
 4) 인덱스 스킵 스캔</br>
 - 인덱스를 구성하는 칼럼의 순서가 매우 중요하다.
@@ -169,7 +169,7 @@ SELECT * FROM employees WHERE gender='M' AND birth_date>='1965-02-01';
 - 8.0 버전부터는 옵티마이저가 gender 칼럼을 건너 뛰어 birth_date 컬럼만으로 인덱스 검색이 가능하게 해주는 인덱스 스킵 스캔 최적화 기능이 도입.
 - WHERE 조건절의 검색을 위해 사용 가능하도록하는 용도.
 
-![8.12.png](hyunhwaoh-images%2F8.12.png)
+<img src="https://github.com/study-archivess/real-mysql/blob/hyunhwaoh/chapter08/Chapter08/hyunhwaoh-images/8.12.png?raw=true" alt="8.12" width="400"/>
 
 - WHERE 조건절에 조건이 없는 인덱스의 선행 칼럼의 유니크한 값이 개수가 적어야 한다. (쿼리 실행계획 비용)
 - 쿼리가 인덱스에 존재하는 칼럼만으로 처리 가능해야 함(커버링 인덱스)
@@ -178,7 +178,7 @@ SELECT * FROM employees WHERE gender='M' AND birth_date>='1965-02-01';
 - 복합 칼럼 인덱스, Concatenated Index 라고도 한다.
 - 두개 이상의 칼럼으로 구성된 인덱스를 다중 칼럼 인덱스라고 한다.
 
-![8.13.png](hyunhwaoh-images%2F8.13.png)
+<img src="https://github.com/study-archivess/real-mysql/blob/hyunhwaoh/chapter08/Chapter08/hyunhwaoh-images/8.13.png?raw=true" alt="8.13" width="500"/>
 
 - 중요한 것은 인덱스의 두번째 칼럼은 첫번쨰 칼럼에 의존해서 정렬돼 있다. 두번쨰 칼럼의 정렬은 첫번째 칼럼이 똑같은 레코드에서만 의미가 있다. 정렬의 우선순위는 첫번째 칼럼.
 
@@ -194,16 +194,17 @@ CREATE INDEX ix_teamname_userscore ON employees (team_name ASC, user_score DESC)
 ```
 
 2) **인덱스 스캔 방향**</br>
-인덱스는 항상 오름차순으로 정렬돼 있지만 인덱스를 최솟값부터 읽으면 오름차순으로 값을 가져올 수 있다.</br>
-쵀대값부터 읽으면 내림차순으로 값을 가져올 수 있다.
+   인덱스는 항상 오름차순으로 정렬돼 있지만 인덱스를 최솟값부터 읽으면 오름차순으로 값을 가져올 수 있다.</br>
+   쵀대값부터 읽으면 내림차순으로 값을 가져올 수 있다.
 
-![8.14.png](hyunhwaoh-images%2F8.14.png)
 
-쿼리의 ORDER BY 처리나 MIN() 또는 MAX() 함수 등의 최적화가 필요한 경우에도 
+<img src="https://github.com/study-archivess/real-mysql/blob/hyunhwaoh/chapter08/Chapter08/hyunhwaoh-images/8.14.png?raw=true" alt="8.14" width="600"/>
+
+쿼리의 ORDER BY 처리나 MIN() 또는 MAX() 함수 등의 최적화가 필요한 경우에도
 옵티마이저는 인덱스의 읽기 방향을 전환해서 사용하도록 실행계획을 만든다.
 
 3) **내림차순 인덱스**</br>
-인덱스가 내림차순인지 오름차순인지 관계 없이 읽는 순서만 변경해서 해결이 가능하다.
+   인덱스가 내림차순인지 오름차순인지 관계 없이 읽는 순서만 변경해서 해결이 가능하다.
 
 다음의 복합 인덱스에서 각각의 칼럼이 내림차순과 오름 차순이 혼합된 경우, 내임차순 인덱스로만 해결가능하다.
 
@@ -219,7 +220,8 @@ CREATE INDEX ix_teamname_userscore ON employees (team_name ASC, user_score DESC)
 내부적으로 InnoDB 인덱스 역순 스캔이 정순 스캔에 비해 느리다.</br>
 다음은 페이지 내 인덱스 레코드가 단방향으로만 연결된 구조이다.
 
-![8.16.png](hyunhwaoh-images%2F8.16.png)
+
+<img src="https://github.com/study-archivess/real-mysql/blob/hyunhwaoh/chapter08/Chapter08/hyunhwaoh-images/8.16.png?raw=true" alt="8.16" width="600"/>
 
 ```sql
 SELECT * FROM tab WHERE userid=? ORDER BY score DESC LIMIT 10;
@@ -238,8 +240,8 @@ INDEX (userid DESC, score DESC)
 WHERE, GROUP BY, ORDER BY 절이 어떤 경우에 인덱스를 사용할 수 있고 어떤 방식으로 사용할 수 있는지 식별할 수 있어야 한다.
 
 1) **비교 조건의 종류와 효율성**</br>
-다중 칼럼 인덱스에서 각 칼럼의 순서와 그 칼럼에 사용된 조건이 동등(=) 비교, 아니면 크다(>) 또는 작다(<) 같은 범위 조건인지에 따라 
-각 인덱스 칼럼의 활용 형태가 달라지면 그 효율도 달라진다.
+   다중 칼럼 인덱스에서 각 칼럼의 순서와 그 칼럼에 사용된 조건이 동등(=) 비교, 아니면 크다(>) 또는 작다(<) 같은 범위 조건인지에 따라
+   각 인덱스 칼럼의 활용 형태가 달라지면 그 효율도 달라진다.
 
 ```sql
 SELECT * FROM dept_emp WHERE dept_no='d002' AND emp_no >= 10114;
@@ -253,18 +255,20 @@ SELECT * FROM dept_emp WHERE dept_no='d002' AND emp_no >= 10114;
 `emp_no>=10144 AND depth_no='d002'` 인 레코드를 찾는다.
 이후 모든 레코드에 대해 dept_no가 d002인이 비교하는 과정을 거친다.
 
-![8.17.png](hyunhwaoh-images%2F8.17.png)
+
+<img src="https://github.com/study-archivess/real-mysql/blob/hyunhwaoh/chapter08/Chapter08/hyunhwaoh-images/8.17.png?raw=true" alt="8.17" width="500"/>
 
 케이스 A의 경우 emp_no 는 비교 작업의 범위를 좁히는데 도움을 준다.(작업범위 결정 조건)</br>
 케이스 B의 경우 dept_no는 비교 작업 범위를 좁히는데 도움을 주지 못한다. (필터링 조건, 체크 조건)
 
 2) **인덱스의 가용성**</br>
-B-Tree 인덱스의 특징은 왼쪽 값에 기준해서 오른쪽 값이 정렬돼 있다.</br>
-왼쪽이란 하나의 칼럼 내에서뿐만 아니라 다중 칼럼 인덱스의 칼럼에 대해서도 함께 적용 된다.</br>
-인덱스 키 값의 이런 정렬 특성은 빠른 검색의 전제 조건이다.</br>
-하나의 칼럼으로 검색해도 값의 왼쪽 부분이 없으면 인덱스 레인지 스캔 방식의 검색이 불가능하다.
+   B-Tree 인덱스의 특징은 왼쪽 값에 기준해서 오른쪽 값이 정렬돼 있다.</br>
+   왼쪽이란 하나의 칼럼 내에서뿐만 아니라 다중 칼럼 인덱스의 칼럼에 대해서도 함께 적용 된다.</br>
+   인덱스 키 값의 이런 정렬 특성은 빠른 검색의 전제 조건이다.</br>
+   하나의 칼럼으로 검색해도 값의 왼쪽 부분이 없으면 인덱스 레인지 스캔 방식의 검색이 불가능하다.
 
-![8.18.png](hyunhwaoh-images%2F8.18.png)
+
+<img src="https://github.com/study-archivess/real-mysql/blob/hyunhwaoh/chapter08/Chapter08/hyunhwaoh-images/8.18.png?raw=true" alt="8.18" width="500"/>
 
 케이스 A: (first_name)
 
@@ -275,20 +279,20 @@ SELECT * FROM employees WHERE first_name LIKE '%mer';
 ```
 해당 쿼리는 인덱스 레인지 스캔 방식을 사용할 수 없다.
 first_name 칼럼의 왼쪽부터 비교해야한다.
-해당 쿼리는 왼쪽값이 고정되 있지 않기 때문에 정렬 우선순위가 낮은 뒷부분의 값만으로 
+해당 쿼리는 왼쪽값이 고정되 있지 않기 때문에 정렬 우선순위가 낮은 뒷부분의 값만으로
 왼쪽 기준 정렬 기반의 인덱스인 B-tree에서는 인덱스의 효과를 얻을 수 없다.
 
 ```sql
 SELECT * FROM dpet_emp WHERE emp_no >= 10144;
 ```
-dept_no 칼럼에 대해 먼저 정렬 후 다시 emp_no 칼럼으로 정렬되기 때문에 
+dept_no 칼럼에 대해 먼저 정렬 후 다시 emp_no 칼럼으로 정렬되기 때문에
 인덱스의 선행 칼럼인 dept_no 조건 없이 emp_no 값으로만 검색하면 인덱스를 효율적으로 사용할 수 없다.
 
 WHERE 조건절 뿐 아니라 인덱스의 왼쪽 값 기준 규칙은 GROUP BY 절이 나 ORDER BY 절에도 동일 적용된다.
 
 3) **가용성과 효율성 판단**</br>
-B-Tree 특성상 다은 조건에서는 작업 범위 결정 조건으로 사용할 수 없다.</br>
-경우에 따라 체크 조건으로 인덱스를 사용할 수는 있다.
+   B-Tree 특성상 다은 조건에서는 작업 범위 결정 조건으로 사용할 수 없다.</br>
+   경우에 따라 체크 조건으로 인덱스를 사용할 수는 있다.
 
 - NOT-EQUAL로 비교된 경우 (<>, NOT IN, NOT BETWEEN, IS NOT NULL)
 - LIKE ‘%??’ 앞부분이 나닌 뒷부분 일치 형태로 문자열 패턴이 비교된 경우
@@ -299,7 +303,7 @@ B-Tree 특성상 다은 조건에서는 작업 범위 결정 조건으로 사용
 
 
 다른 일반적 DBMS에서는 NULL 값이 인덱스에 저장되지 않지만 MySQL 에서는 NULL도 인덱스에 저장됨.
- 
+
 **다중 칼럼으로 이루어진 인덱스 조건의 경우**
 ```sql
 INDEX ix_test (column_1, column_2, column_3 ..., column_n)
@@ -312,7 +316,7 @@ INDEX ix_test (column_1, column_2, column_3 ..., column_n)
 **작업 범위 결정 조건으로 인덱스 사용이 가능한 경우**</br>
 - column_1 ~ column_(i-1) 칼럼까지 동등 비교 형태로 비교
 - column_1 칼럼에 대해 다음 연산자 중 하나로 비교</br>
-동등 비교(=, IN), 크다 작다 형태, LIKE로 좌측 일치 패턴(LIKE '승환%')
+  동등 비교(=, IN), 크다 작다 형태, LIKE로 좌측 일치 패턴(LIKE '승환%')
 
 위의 두 가지 조건을 모두 만족하는 쿼리는 column_1부터 column_i까지는 작업 범위 결정 조건으로 사용되고,
 column_(i+1)부터 column_n까지의 조건은 체크 조건으로 사용된다.
@@ -325,15 +329,17 @@ column_(i+1)부터 column_n까지의 조건은 체크 조건으로 사용된다.
 - 공간 데이터의 연산 함수 (거리 또는 포함 관계의 처리)
 
 1) **구조 및 특성**</br>
-기하학적 도형 정보 를 관리할 수 있는 데이터 타입을 제공
+   기하학적 도형 정보 를 관리할 수 있는 데이터 타입을 제공
 
-![8.19.png](hyunhwaoh-images%2F8.19.png)
+
+<img src="https://github.com/study-archivess/real-mysql/blob/hyunhwaoh/chapter08/Chapter08/hyunhwaoh-images/8.19.png?raw=true" alt="8.19" width="600"/>
 GEOMETRY 타입은 아래 세 개 타입의 슈퍼 타입
 
 MBR(Minimum Bounding Rectangle)이란 해당 도형을 감싸는 최소 크기의 사각형을 의미한다.
 이 사각형들의 포함 관계를 B-Tree 형태로 구현한 인덱스가 R-Tree
 
-![8.22.png](hyunhwaoh-images%2F8.22.png)
+
+<img src="https://github.com/study-archivess/real-mysql/blob/hyunhwaoh/chapter08/Chapter08/hyunhwaoh-images/8.22.png?raw=true" alt="8.22" width="500"/>
 
 - 최상위 레벨 : R1, R2
 - 차상위 레벨 : R3, R4, R5, R6
@@ -342,15 +348,17 @@ MBR(Minimum Bounding Rectangle)이란 해당 도형을 감싸는 최소 크기�
 최하위 레벨은 각 도형 데이터의 MBR을 의미한다. 차상위 레벨은 중간 크기의 MBR(도형 객체의 그룹)이다.
 최상위 레벨은 R-Tree의 루트 노드에 저장되고 차상위 그룹 MBR은 R-Tree의 브랜치 노드에, 그리고 각 도형의 객체(최하위 레벨)은 리프 노드에 저장된다.
 
-![8.23.png](hyunhwaoh-images%2F8.23.png)
+
+<img src="https://github.com/study-archivess/real-mysql/blob/hyunhwaoh/chapter08/Chapter08/hyunhwaoh-images/8.23.png?raw=true" alt="8.23" width="800"/>
 
 2) **R-Tree 인덱스의 용도**</br>
-일반적으로 위도 경도 좌표 저장 및 CAD/CAM 소프트웨어 또는 회로 디자인 같은 좌표 시스템 기반 정보에 적용 가능하다.
+   일반적으로 위도 경도 좌표 저장 및 CAD/CAM 소프트웨어 또는 회로 디자인 같은 좌표 시스템 기반 정보에 적용 가능하다.
 
-각 도형의 포함 관계를 이용해 만들어진 인덱스이므로 ST_Contains(), ST_Within() 같은 포함 관계를 비교하는 함수로 
+각 도형의 포함 관계를 이용해 만들어진 인덱스이므로 ST_Contains(), ST_Within() 같은 포함 관계를 비교하는 함수로
 검색을 수행하는 경우에만 인덱스를 이용할 수 있다.
 
-![8.24.png](hyunhwaoh-images%2F8.24.png)
+
+<img src="https://github.com/study-archivess/real-mysql/blob/hyunhwaoh/chapter08/Chapter08/hyunhwaoh-images/8.24.png?raw=true" alt="8.24" width="500"/>
 
 반경 5km를 그리는 원을 포함하는 최소 사각형 MBR으로 포함 관계 비교를 수행한 것.
 
@@ -373,7 +381,7 @@ B-Tree 인덱스는 문서 전체가 아닌 일부를 인덱스 키로 활용하
 1) **인덱스 알고리즘**</br>
 - 어근분석 알고리즘</br>
   전문 검색 인덱스는 두 가지 중요한 과정을 거쳐서 색인 작업이 수행된다. -> 불용어 처리, 어근 분석</br>
-  불용어 처리: 검색에 별 가치가 없는 단어를 모두 필터링해서 제거하는 작업. 서버에 불용어가 소스코드에 정의되어 있음.</br> 
+  불용어 처리: 검색에 별 가치가 없는 단어를 모두 필터링해서 제거하는 작업. 서버에 불용어가 소스코드에 정의되어 있음.</br>
   어근 분석: 검색어로 선정된 단어의 원형을 찾는 작업. 한글은 MeCab을 플러그인 형태로 사용할 수 있게 지원. 서구권 형태소 분석기는 MongoDB의 Snowball.
 
 
@@ -385,7 +393,8 @@ B-Tree 인덱스는 문서 전체가 아닌 일부를 인덱스 키로 활용하
 ```
 To be or not to be. That is the question.
 ```
-![8.24.1.png](hyunhwaoh-images%2F8.24.1.png)
+
+<img src="https://github.com/study-archivess/real-mysql/blob/hyunhwaoh/chapter08/Chapter08/hyunhwaoh-images/8.24.1.png?raw=true" alt="8.24.1" width="600"/>
 
 생성 토큰들에 대해 불용어를 걸러내는 작업을 수행.
 
@@ -397,18 +406,18 @@ To be or not to be. That is the question.
     - 전문 검색 인덱스의 불용어 처리 무시 : </br>
       모든 전문 검색 인덱스에 대해 불용어를 완전히 제거 설정.
       or InnoDB 스토리지 엔진을 사용하는 테이블의 전문 검색 인덱스에 대해서만 불용어 처리를 무시.
-      
+
     - 사용자 정의 불용어 사용 : </br>
       불용어 목록을 파일로 저장하고, MySQL 서버 설정 파일에서 ft_stopword_file 에 파일 경로 등록
       or 불용어의 목록을 테이블로 저장
 
 2) **전문 검색 인덱스의 가용성**</br>
-갖춰야 할 두가지 조건 : 쿼리 문장이 전문 검색을 위한 문법을 사용, 테이블이 전문 검색 대상 칼럼에 대해서 전문 인덱스 보유
+   갖춰야 할 두가지 조건 : 쿼리 문장이 전문 검색을 위한 문법을 사용, 테이블이 전문 검색 대상 칼럼에 대해서 전문 인덱스 보유
 
 ```sql
 SELECT * FROM tb_test WHERE MATCH(doc_body) AGAINST('애플' IN BOOLEAN_MODE);
 ```
-  MATCH() AGAINST() 구문으로 쿼리를 작성해야하며, 전문 검색 인덱스를 구성하는 칼럼들은 MATCH 절의 괄호 안에 모두 명시되어야 한다.
+MATCH() AGAINST() 구문으로 쿼리를 작성해야하며, 전문 검색 인덱스를 구성하는 칼럼들은 MATCH 절의 괄호 안에 모두 명시되어야 한다.
 
 ## 6. 함수 기반 인덱스
 칼럼 값을 변형해서 인덱스로 사용해야할 떄 함수 기반 인덱스를 활용할 수 있다.
@@ -468,7 +477,8 @@ INSERT INTO user VALUES (1, 'Matt', 'Lee', '{"credit_scores":[360, 353, 351]}');
 - 클러스터링 인덱스은 클러스터링 테이블 과 동의어로 사용된다.
 - 일반적으로 InnoDB와 같이 항상 클러스터링 인덱스로 저장되는 테이블은 PK 기반의 검색이 매우 빠르지만 대신 레코드의 저장이나 PK의 변경이 상대적으로 느리다.
 
-![8.25.png](hyunhwaoh-images%2F8.25.png)
+
+<img src="https://github.com/study-archivess/real-mysql/blob/hyunhwaoh/chapter08/Chapter08/hyunhwaoh-images/8.25.png?raw=true" alt="8.25" width="800"/>
 
 클러스터링 인덱스 구조를 보면 테이블 구조 자체는 B-Tree와 비슷하지만, 클러스터링 인덱스의 리프 노드에는 레코드의 모든 칼럼이 같이 저장되어있다.
 
@@ -555,11 +565,11 @@ ROW 기반의 복제나 InnoDB Cluster에서는 모든 테이블이 프라이머
 유니크 인덱스는 반드시 중복 체크를 해야 하므로 작업 자체를 버퍼링하지 못한다. 이 때문에 유니크 인덱스는 일반 세컨더리 인덱스보다 변경 작업이 더 느리게 작동한다.
 
 ### 유니크 인덱스 사용 시 주의사항
-유일성이 꼭 보장돼야 하는 칼럼에 대해서는 유니크 인덱스를 생성하되, 
+유일성이 꼭 보장돼야 하는 칼럼에 대해서는 유니크 인덱스를 생성하되,
 꼭 필요하지 않다면 유니크 인덱스보다는 유니크하지 않은 세컨더리 인덱스를 생성하는 방법도 고려할수 있다.
 
 ## 10. 외래키
-MySQL에서 외래키는 InnoDB 스토리지 엔진에서만 생성할 수 있으며, 
+MySQL에서 외래키는 InnoDB 스토리지 엔진에서만 생성할 수 있으며,
 외래키 제약이 설정되면 자동으로 연관되는 테이블의 칼럼에 인덱스까지 생성한다.
 외래키가 제거되지 않은 상태에서는 자동으로 생성된 인덱스를 삭제할 수 없다.
 
@@ -571,7 +581,8 @@ MySQL에서 외래키는 InnoDB 스토리지 엔진에서만 생성할 수 있�
 
 ### 자식 테이블의 변경이 대기하는 경우
 
-![8.26.png](hyunhwaoh-images%2F8.26.png)
+
+<img src="https://github.com/study-archivess/real-mysql/blob/hyunhwaoh/chapter08/Chapter08/hyunhwaoh-images/8.26.png?raw=true" alt="8.26" width="800"/>
 
 - 자식 테이블의 외래 키 칼럼의 변경은 부모 테이블의 확인이 필요하다.
 - 이 상태에서 부모 테이블의 해당 레코드가 쓰기 잠금이 걸려 있으면, 해당 쓰기 잠금이 해제될 때까지 기다리게 된다.
@@ -579,9 +590,10 @@ MySQL에서 외래키는 InnoDB 스토리지 엔진에서만 생성할 수 있�
 
 ### 부모 테이블의 변경 작업이 대기하는 경우
 
-![8.27.png](hyunhwaoh-images%2F8.27.png)
+
+<img src="https://github.com/study-archivess/real-mysql/blob/hyunhwaoh/chapter08/Chapter08/hyunhwaoh-images/8.27.png?raw=true" alt="8.27" width="800"/>
 
 - 첫 번째 커넥션에서 부모 키 1을 참조하는 자식 테이블의 레코드를 변경하면 tb_child 테이블의 레코드에 대해 쓰기 잠금을 획득한다.
-- 이때 2번 커넥션이 tb_parent 테이블에서 id가 1인 레코드를 삭제하는 경우, 
-이 쿼리(4번) 는 tb_child 테이블의 레코드에 대한 쓰기 잠금이 해제될 때까지 기다려야 한다.
+- 이때 2번 커넥션이 tb_parent 테이블에서 id가 1인 레코드를 삭제하는 경우,
+  이 쿼리(4번) 는 tb_child 테이블의 레코드에 대한 쓰기 잠금이 해제될 때까지 기다려야 한다.
 - 자식 테이블이 생성될 때 정의된 외래키 특성 때문에 부모 레코드가 삭제되면 자식 레코드도 동시에 삭제되는 식으로 작동한다.
