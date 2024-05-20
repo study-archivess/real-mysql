@@ -291,18 +291,117 @@ EXPLAIN
     GROUP BY emp_no;
 ```
 
-- salaries 테이블의 인덱스는 (emp_no, from_date)로 생성돼 있다. 
-- 위의 쿼리 문장에서 WHERE 조건은 인덱스 레인지 스캔 접근 방식으로 이용할 수 없는 쿼리지만, 실행 계획은 인덱스 레인지 스캔을 이용한다.
+salaries 테이블의 인덱스는 (emp_no, from_date)로 생성돼 있다. </br>
 
+위의 쿼리 문장에서 WHERE 조건은 인덱스 레인지 스캔 접근 방식으로 이용할 수 없는 쿼리지만, 
+실행 계획은 인덱스 레인지 스캔을 이용했다.
+
+**실행 순서**
+
+1. (emp_no, from_date) 인덱스를 차례대로 스캔하면서 `emp_no` 의 첫 번째 유일한 값(그룹 키) "10001"을 찾아낸다.
+2. (emp_no, from_date) 인덱스에서 `emp_no` 가 '10001'인 것 중에서 `from_date` 값이 '1985-03-01'인 레코드만 가져온다. 
+이 검색 방법은 1번 단계에서 알아낸 '10001' 값과 쿼리의 WHERE 절에 사용된 "from_date='1985-03- 01'" 조건을 합쳐서 
+"emp_no=10001 AND from_date='1985-03-01'" 조건으로 (emp_ no, from_date) 인덱스 를 검색하는 것과 거의 흡사하다.
+3. (emp_no, from_date) 인덱스에서 `emp_no` 의 그다음 유니크한(그룹 키) 값을 가져온다.
+4. 3번 단계에서 결과가 더 없으면 처리를 종료하고, 결과가 있다면 2번 과정으로 돌아가서 반복 수행한다.
+
+_** 루스 인덱스 스캔을 통한 GROUP BY 참고_
+</br>
+<img src="https://github.com/study-archivess/real-mysql/blob/hyunhwaoh/chapter08/Chapter08/hyunhwaoh-images/8.11.png?raw=true" alt="8.11" width="400"/>
+
+인덱스에서 WHERE 조건을 만족하는 범위 전체를 다 스캔할 필요가 없다는 걸 옵티마이저가 알고있기 때문에 </br>
+조건에 만족하지 않는 레코드는 무시하고 다음 레코드로 이동한다.
+
+
+- 루스 인덱스 스캔은 단일 테이블에 대해 수행되는 GROUP BY 처리에만 사용할 수 있다.
+- Group by 또는 집합 함수 가운데 Max() 또는 Min() 함수에 대해 최적화를 하는경우 사용된다.
+- 프리픽스(컬럼값의 앞쪽 일부만으로 생성된 인덱스) 인덱스는 루스 인덱스 스캔을 사용할 수 없다.
+- 루스 인덱스 스캔은 분포도가 좋지 않은 인덱스일수록 더 빠른 결과를 만들어 낸다.
+- 루스 인덱스 스캔은 임시 테이블이 필요하지 않다.
+
+
+> ** 루스 인덱스 스캔 판별 예시 </br>
+> ** (col1, col2, col3) 칼럼으로 생성된 tb_test 테이블
+> 
+> // MIN(), MAX() 이 외의 집합 함수가 사용 됐기에 불가. </br>
+> SELECT col1, SUM(col2) FROM tb_test GROUP BY col1; </br>
+> 
+> // GROUP BY 에 사용된 칼럼이 인덱스 구성 칼럼의 왼쪽부터 일치하지 않아 불가. </br>
+> SELECT col1, col2 FROM tb_test GROUP BY col2, col3; </br>
+> 
+> // SELECT 절의 칼럼이 GROUP BY 와 일치하지 않아 불가.</br>
+> SELECT col1, col3 FROM tb_test GROUP BY col1, col2;
+> 
+> // 가능.
+> SELECT DISTINCT col1, col2 FROM tb_test;
+> SELECT col1, MIN(col2) FROM tb_test GROUP BY col1;
+> SELECT MAX(col3), MIN(col3), col1, col2 FROM tb_test WHERE col2 > const GROUP BY col1, col2;
 
 ### 3) 임시 테이블을 사용하는 GROUP BY
+- GROUP BY 기준 칼럼 과 관계없이 인덱스를 사용하지 못할 때 이 방식으로 처리된다.
+
+```sql
+EXPLAIN
+    SELECT e.last_name, AVG(s.salary)
+    FROM employees e, salaries s 
+    WHERE s.emp_no=e.emp_no
+    GROUP BY e.last_name;
+```
+
+실행 계획에서는 Extra 칼럼에 Using temporary 가 표시 됐다.</br>
+
+임시 테이블이 사용된 것은 테이블 풀 스캔 하기 때문이 아니라 인덱스를 사용할 수 없는 GROUP BY 이기 떄문이다.</br>
+
+GROUP BY, ORDER BY 함께 사용시 정렬 작업을 실행한다.</br>
+
+GROUP BY가 필요한 경우 내부적으로 GROUP BY 절의 칼럼들로 구성된 유니크 인덱스를 가진 임시 테이블을 만들어서 중복 제거와 집합 함수 연산을 수행한다.</br>
+
+위의 쿼리를 처리하기 위해 다음의 임시 테이블을 만들고, 조인 결과를 한 건씩 가져와 중복체크 하면서 INSERT 또는 UPDATE 를 실행한다.</br>
+별도의 정렬 작업 없이 GROUP BY 가 처리된다.
+
+```sql
+CREATE TEMPORARY TABLE ... (
+       last_name VARCHAR(16),
+       salary INT,
+       UNIQUE INDEX ux_lastname (last_name)
+)
+```
 
 ## 5. DISTINCT 처리
 
+특정 칼럼의 유니크한 값만 조회하려면 SELECT 쿼리에 DISTINCT를 사용한다.
+
+경우에 따라 키워드가 영향을 미치는 범위가 달라진다.
+
+집합 함수와 같이 DISTINCT가 사용되는 쿼리의 실행 계획에서 DISTINCT 처리가 인덱스 사용하지 못할 시 항상 임시테이블이 필요하다.</br>
+(이 경우 실행계획 Extra 에는 메시지가 출력되지 않음)
+
 ### 1) SELECT DISTINCT ...
+이 경우 GROUP BY 와 동일한 방식으로 처리된다.</br>
+GROUP BY를 수행하는 쿼리에 ORDER BY 절이 없으면 정렬을 사용하지 않기 때문에 다음의 두 쿼리는 내부적으로 같은 작업을 수행한다.
+
+```sql
+SELECT DISTINCT emp_no FROM salaries;
+SELECT emp_no FROM salaries GROUP BY emp_no;
+```
+
+DISTINCT 키워드는 조회되는 모든 칼럼에 영향을 미친다. </br>
+이것은 일부 칼럼만 유니크하게 조회하는 것은 아니고 레코드를 유니크하게 조회하는 것이다.
 
 ### 2) 집합 함수와 함께 사용된 DISTINCT
+COUNT(), MIN(), MAX() 같은 집합 함수 내에서 DISTINCT 키워드가 사용될 경우 그 집합 함수의 인자로 전달된 칼럼값이 유니크한 것들을 가져온다. </br>
 
+집합 함수가 없는 SELECT 쿼리에서 DISTINCT 는 조회 하는 모든 칼럼의 조합이 유니크한 것들만 가져온다.</br>
+
+> DISTINCT 가 집합 함수 없이 사용된 경우와 함수 내 사용된 경우 결과 차이
+> 
+> SELECT DISTINCT first_name, last_name FROM employees WHERE emp_no BETWEEN 10001 AND 10200;
+> 
+> SELECT COUNT(DISTINCT first_name), COUNT(DISTINCT last_name) 
+> FROM employees WHERE emp_no BETWEEN 10001 AND 10200;
+> 
+> SELECT COUNT(DISTINCT first_name, last_name)
+> FROM employees WHERE emp_no BETWEEN 10001 AND 10200;
 
 ## 6. 내부 임시 테이블 사용
 
