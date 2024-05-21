@@ -113,12 +113,15 @@ SET SESSION innodb_parallel_read_threads=4;
 - UNION 의 결과와 같이 임시 테이블의 결과를 다시 정렬해야 하는 경우
 - 랜덤하게 결과 레코드를 가져와야 하는 경우
 
+ORDER BY/GROUP BY 처리에 인덱스를 사용하지 못하는 경우, MySQL은 Filesort 알고리즘을 통해 데이터를 정렬한다.
+
 인덱스를 이용하지 않고 별도의 정렬 처리를 수행했는지는 실행 계획의 Extra 칼럼에 Using filesort 메시지가 표시되는지 여부로 판단한다.
 
 
 메모리 영역 설명
 https://blog.ex-em.com/1682
-![9.1.png](hyunhwaoh-images%2F9.1.png)
+
+<img src="hyunhwaoh-images/9.1.png" alt="9.1" width="600" >
 
 
 ### 1) 소트 버퍼 Sort buffer
@@ -134,6 +137,7 @@ https://blog.ex-em.com/1682
 - 소트 버퍼는 세션 메모리 영역에 해당하므로 클라이언트가 공유하지 않는다.
 - 커넥션이 많고, 정렬 작업이 많을수록 소트 버퍼로 소비되는 메모리 공간이 커진다.
 
+<img src="hyunhwaoh-images/9.1.0.png" alt="9.1.0" width="600" >
 
 ### 2) 정렬 알고리즘
 
@@ -150,12 +154,11 @@ https://blog.ex-em.com/1682
 ### 3) 싱글 패스 Single-pass
 - <sort_key, additional_fields>, <sort_key, packed_additional_fields>
 - 소트 버퍼에 정렬 기준 칼럼을 포함해 SELECT 대상이 되는 칼럼 전부를 담아서 정렬을 수행하는 정렬 방식이다 </br>
-  처음 employees 테이블을 읽을 때 정렬에 필요하지 않은 last_name 칼럼까 지 전부 읽어서 소트 버퍼에 담고 정렬을 수행한다.</br>
-  정렬이 완료되면 정렬 버퍼의 내용을 그대 로 클라이언트로 넘겨준다.
+  처음 employees 테이블을 읽을때 정렬에 필요하지 않은 last_name 칼럼까지 전부 읽어서 소트 버퍼에 담고 정렬을 수행한다.</br>
+  정렬이 완료되면 정렬 버퍼의 내용을 그대로 클라이언트로 넘겨준다.
   투패스 방식보다 더 많은 소트 버퍼 공간이 필요하다.
 
-![9.2.png](hyunhwaoh-images%2F9.2.png)
-
+<img src="hyunhwaoh-images/9.2.png" alt="9.2" width="700" >
 
 ### 4) 투 패스
 - <sort_key, rowid>
@@ -163,8 +166,8 @@ https://blog.ex-em.com/1682
 - 처음 `employees` 테이블을 읽을 때는 정렬에 필요한 `first_name` 칼럼과 프라이머리 키인 `emp_no` 만 읽어서 정렬을 수행한다.
 - 레코드 크기가 `max_length_for_sort_data` 설정 값보다 클때, BLOB, TEXT 타입 컬럼을 SELECT 할때에는 투패스 정렬 방식을 사용한다.
 
-![9.3.png](hyunhwaoh-images%2F9.3.png)
 
+<img src="hyunhwaoh-images/9.3.png" alt="9.3" width="700" >
 
 ### 5) 정렬 처리 방법
 - 쿼리에 ORDER BY가 사용되면 3가지 처리 방법 중 하나로 정렬되고 뒤로갈수록 처리 속도가 떨어진다.
@@ -181,8 +184,7 @@ WHERE 절에 첫 번째로 읽는 테이블의 칼럼에 대한 조건이 있다
 인덱스를 이용해 정렬이 처리되는 경우에는 실제 인덱스의 값이 정렬돼 있기 때문에 인덱스의 순서대로 읽기만 하면 된다.</br>
 별도의 정렬을 위한 추가 작업을 수행하지 않는다
 
-![9.4.png](hyunhwaoh-images%2F9.4.png)
-
+<img src="hyunhwaoh-images/9.4.png" alt="9.4" width="700" >
 
 #### b. 조인에서 드라이빙 테이블만 정렬
 조인이 수행되면 결과 레코드의 건수와 크기도 늘어난다.</br>
@@ -204,7 +206,7 @@ WHERE 절이 다음 2가지 조건을 갖추고 있다면 드라이빙 테이블
 
 옵티마이저는 드라이빙 테이블만 검색해서 정렬을 수행하고, 그 결과와 salaries 테이블은 조인한 것이다.
 
-![9.5.png](hyunhwaoh-images%2F9.5.png)
+<img src="hyunhwaoh-images/9.5.png" alt="9.5" width="700" >
 
 i. 인덱스를 이용해 “emp_no BETWEEN 100001 AND 100010” 조건을 만족하는 9건 검색</br>
 ii. 검색 결과를 last_name 칼럼으로 정렬을 수행(Filesort)</br>
@@ -226,8 +228,8 @@ ORDER BY s.salary;
 위 쿼리의 실행 계획을 살펴보면 Extra 칼럼에 `Using temporary; Using filesort` 가 표시된다.
 드리븐 테이블 컬럼 salary 로 정렬하므로, 조인 결과를 임시 테이블에 저장하고 그 결과를 다시 정렬처리하게 된다.
 
-![9.6.png](hyunhwaoh-images%2F9.6.png)
 
+<img src="hyunhwaoh-images/9.6.png" alt="9.6" width="500" >
 
 #### d. 정렬 처리 성능 비교
 LIMIT 은 테이블이나 처리 결과의 일부만 가져오기 때문에 MySQL 서버가 처리해야 할 작업량이 줄어드는 역할을 한다.</br>
@@ -453,3 +455,5 @@ Created_tmp_disk_tables|0    |
 Created_tmp_files      |15   |
 Created_tmp_tables     |0    |
 ```
+
+https://dev.mysql.com/doc/refman/8.0/en/internal-temporary-tables.html
