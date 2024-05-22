@@ -326,7 +326,7 @@ salaries 테이블의 인덱스는 (emp_no, from_date)로 생성돼 있다. </br
 
 _** 루스 인덱스 스캔을 통한 GROUP BY 참고_
 </br>
-<img src="https://github.com/study-archivess/real-mysql/blob/hyunhwaoh/chapter08/Chapter08/hyunhwaoh-images/8.11.png?raw=true" alt="8.11" width="400"/>
+<img src="hyunhwaoh-images/8.11.png" alt="8.11" width="400"/>
 
 인덱스에서 WHERE 조건을 만족하는 범위 전체를 다 스캔할 필요가 없다는 걸 옵티마이저가 알고있기 때문에 </br>
 조건에 만족하지 않는 레코드는 무시하고 다음 레코드로 이동한다.
