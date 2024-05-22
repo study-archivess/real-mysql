@@ -117,9 +117,26 @@ ORDER BY/GROUP BY 처리에 인덱스를 사용하지 못하는 경우, MySQL은
 
 인덱스를 이용하지 않고 별도의 정렬 처리를 수행했는지는 실행 계획의 Extra 칼럼에 Using filesort 메시지가 표시되는지 여부로 판단한다.
 
+#### filesort 알고리즘 flow
+<img src="hyunhwaoh-images/9.1.0.png" alt="9.1.0" width="600" >
 
-메모리 영역 설명
-https://blog.ex-em.com/1682
+1. 데이터 스캔 및 where 필터 처리 후 레코드를 소트 버퍼에 저장한다.
+   정렬조건 컬럼 값과 데이터 포지션 정보를 버퍼에 저장하고, InnoDB 의 경우 pk 값이 버퍼에 저장된다.  
+   (정렬 알고리즘에 따라 Single-pass, Two-pass 방식으로 나뉨. 뒤에 설명)
+2. 소트 버퍼가 차면 Quick sort 처리하여 결과를 임시 파일에 저장하고, 위 과정에 부합하는 모든 레코드를 읽을 때까지 반복한다.
+3. 생성된 임시 파일들을 merge 한다. merge 횟수는 상태 변수에 누적 카운트된다.</br>
+   sort_buffer_size 가 작은 경우 sort_merge_pass 변수 값이 커진다.
+4. merge 완료된 Result set 을 리턴한다.</br>
+   결과 순서대로 데이터를 읽는 경우에 많은 Random I/O가 발생하므로, 별도의 버퍼(read_rnd_buffer 환경 변수)에서 결과 파일의 위치 정보를 정렬하여 Sequential I/O로 유도한다.
+
+참고: https://blog.naver.com/seuis398/70039224614
+
+#### MySQL Connection 별 메모리 사용량
+참고: https://jaesong.tistory.com/17147220
+
+
+#### 메모리 영역 설명 
+참고: https://blog.ex-em.com/1682
 
 <img src="hyunhwaoh-images/9.1.png" alt="9.1" width="600" >
 
@@ -131,13 +148,12 @@ https://blog.ex-em.com/1682
 - 정렬해야 할 레코드의 건수가 소트 버퍼로 할당된 공간보다 크다면 정렬해야 할 레코드를 여러 조각으로 나눠서 처리하는데</br> 이 과정에서 임시 저장을 위해 디스크를 사용한다.
 - 기본 sort buffer size 262144, 262KB.</br>
   책에서 테스트 시 256KB-8MB 사이가 최적의 성능을 보였고, 문서에서는 리눅스 환경 에서 256KB-2MB 사이를 권장한다. 설정된 사이즈를 넘길경우 memory 문제가 생길 수 있다.</br>
-  (https://dev.mysql.com/doc/refman/8.0/en/server-system-variables.html#sysvar_sort_buffer_size)
+  (참고: https://dev.mysql.com/doc/refman/8.0/en/server-system-variables.html#sysvar_sort_buffer_size)
 - 멀티 머지: 메모리의 소트 버퍼에서 정렬 하고, 그 결과를 임시로 디스크에 기록하고 다음 레코드를 가져와 이 작업을 병합, 반복한다.
-- 수행된 멀티 머지 횟수는 sort_merge_passes 변수에 누적 집계된다.
+- 수행된 멀티 머지 횟수는 `sort_merge_passes` 변수에 누적 집계된다.
 - 소트 버퍼는 세션 메모리 영역에 해당하므로 클라이언트가 공유하지 않는다.
 - 커넥션이 많고, 정렬 작업이 많을수록 소트 버퍼로 소비되는 메모리 공간이 커진다.
 
-<img src="hyunhwaoh-images/9.1.0.png" alt="9.1.0" width="600" >
 
 ### 2) 정렬 알고리즘
 
@@ -155,8 +171,8 @@ https://blog.ex-em.com/1682
 - <sort_key, additional_fields>, <sort_key, packed_additional_fields>
 - 소트 버퍼에 정렬 기준 칼럼을 포함해 SELECT 대상이 되는 칼럼 전부를 담아서 정렬을 수행하는 정렬 방식이다 </br>
   처음 employees 테이블을 읽을때 정렬에 필요하지 않은 last_name 칼럼까지 전부 읽어서 소트 버퍼에 담고 정렬을 수행한다.</br>
-  정렬이 완료되면 정렬 버퍼의 내용을 그대로 클라이언트로 넘겨준다.
-  투패스 방식보다 더 많은 소트 버퍼 공간이 필요하다.
+  정렬이 완료되면 정렬 버퍼의 내용을 그대로 클라이언트로 넘겨준다.</br>
+  투패스 방식인 pk 값으로 한번더 데이터에 access 하는것을 줄이기에 개선된 알고리즘으로 추가되었지만, 투패스 방식보다 더 많은 소트 버퍼 공간이 필요하다.
 
 <img src="hyunhwaoh-images/9.2.png" alt="9.2" width="700" >
 
@@ -164,10 +180,11 @@ https://blog.ex-em.com/1682
 - <sort_key, rowid>
 - 정렬 대상 칼럼과 프라이머리 키 값만 소트 버퍼에 담아서 정렬을 수행하고, 정렬된 순서대로 다시 프라이머리 키로 테이블을 읽어서 SELECT 할 칼럼을 가져오는 방식이다.
 - 처음 `employees` 테이블을 읽을 때는 정렬에 필요한 `first_name` 칼럼과 프라이머리 키인 `emp_no` 만 읽어서 정렬을 수행한다.
-- 레코드 크기가 `max_length_for_sort_data` 설정 값보다 클때, BLOB, TEXT 타입 컬럼을 SELECT 할때에는 투패스 정렬 방식을 사용한다.
+- 레코드 크기가 `max_length_for_sort_data` 설정 값보다 클때 (기본값 1KB), </br> BLOB, TEXT 타입 컬럼을 SELECT 할때에는 투패스 정렬 방식을 사용한다.
 
 
 <img src="hyunhwaoh-images/9.3.png" alt="9.3" width="700" >
+
 
 ### 5) 정렬 처리 방법
 - 쿼리에 ORDER BY가 사용되면 3가지 처리 방법 중 하나로 정렬되고 뒤로갈수록 처리 속도가 떨어진다.
