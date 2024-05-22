@@ -102,9 +102,9 @@ SET SESSION innodb_parallel_read_threads=4;
 레코드 1~2건을 가져오는 쿼리를 제외하면 대부분의 SELECT 쿼리에서 정렬은 필수적으로 사용된다.
 
 
-|     정렬을 처리하는</br> 두가지 방식     | 장점                                                                                                             | 단점                                                      |
-|:----------------------------:|----------------------------------------------------------------------------------------------------------------|---------------------------------------------------------|
-|             인덱스              | INSERT, UPDATE, DELETE 쿼리가 실행될 때 이미 인 덱스가 정렬돼 있어서 순서대로 읽기만 하면 되므로 매우 빠르다.                                      |  INSERT, UPDATE, DELETE 작업 시 부가적인 인덱스 추가/삭제 작업이 필요하므로 느리다.</br> 인덱스 때문에 디스크 공간이 더 많이 필요하다.</br> 인덱스의 개수가 늘어날수록 InnoDB의 버퍼 풀을 인덱스 이용 위한 메모리가 많이 필요하다.   |
+|     정렬을 처리하는</br> 두가지 방식     | 장점                                                                                                            | 단점                                                      |
+|:----------------------------:|---------------------------------------------------------------------------------------------------------------|---------------------------------------------------------|
+|             인덱스              | INSERT, UPDATE, DELETE 쿼리가 실행될 때 이미 인덱스가 정렬돼 있어서 순서대로 읽기만 하면 되므로 매우 빠르다.                                      |  INSERT, UPDATE, DELETE 작업 시 부가적인 인덱스 추가/삭제 작업이 필요하므로 느리다.</br> 인덱스 때문에 디스크 공간이 더 많이 필요하다.</br> 인덱스의 개수가 늘어날수록 InnoDB의 버퍼 풀을 인덱스 이용 위한 메모리가 많이 필요하다.   |
 |           Filesort           | 인덱스를 생성하지 않아도되므로 인덱스를 이용할 때 Filesort 이용의 단점이 장점으로 바뀐다.</br> 정렬해야 할 레코드가 많지 않으면 메모리에서 Filesort 가 처리되므로 충분히 빠르다. |  정렬 작업이 쿼리 실행 시 처리되므로 레코드 대상 건수가 많아질수록 쿼리의 응답 속도가 느리다.                          |
 
 **인덱스 이용이 힘든 경우**
@@ -189,7 +189,7 @@ ORDER BY/GROUP BY 처리에 인덱스를 사용하지 못하는 경우, MySQL은
 ### 5) 정렬 처리 방법
 - 쿼리에 ORDER BY가 사용되면 3가지 처리 방법 중 하나로 정렬되고 뒤로갈수록 처리 속도가 떨어진다.
   - a. 인덱스를 사용한 정렬
-  - b. 조인에서 드라이밍 테이블만 정렬 (Using filesort 표시)
+  - b. 조인에서 드라이빙 테이블만 정렬 (Using filesort 표시)
   - c. 조인에서 조인 결과를 임시 테이블로 저장 후 정렬 (Using temporary; Using filesort 표시)
 - 먼저 옵티마이저는 정렬 처리를 위해 인덱스를 이용할 수 있을지 검토한다.
 - 인덱스를 이용할 수 있다면 별도의 Filesort 과정 없이 인덱스를 순서대로 읽어서 결과를 반환한다.
@@ -269,10 +269,10 @@ LIMIT 은 테이블이나 처리 결과의 일부만 가져오기 때문에 MySQ
 > MySQL 서버가 스트리밍 방식으로 처리해서 반환해도
 > 클라이언트의 JDBC 라이브러리를 사용한다면 서버로부터 받는 레코드를 일단 내부 버퍼에 담아두고 마지막 결과를 받으면 애플리케이션에 반환한다.
 > 이는 불필요한 네트워크 요청을 최소화 하여 전체 처리량을 높이기 위해서이다.
-> 하지만 대량의 데이터를 가져와야 항떄 전송방식을 스트리밍 방식으로 변경할 수 있다.
+> 하지만 대량의 데이터를 가져와야 할떄 전송방식을 스트리밍 방식으로 변경할 수 있다.
 
 정렬 처리 방식 중 인덱스를 사용한 정렬 방식만 스트리밍 처리 방식이고, 나머지는 버퍼링되서 정렬된다.</br>
-어떤 테이블이 먼저 드라이빙 되어 조인되는지도 중요하지만 어떤 정렬 방식으러 처리되는지가 큰 성능 차이가 나므로,</br>
+어떤 테이블이 먼저 드라이빙 되어 조인되는지도 중요하지만 어떤 정렬 방식으로 처리되는지가 큰 성능 차이가 나므로,</br>
 최소 드라이빙 테이블 정렬로 구성하는 것이 좋은 튜닝 방법이다.
 
 
@@ -352,8 +352,8 @@ _** 루스 인덱스 스캔을 통한 GROUP BY 참고_
 > SELECT col1, col3 FROM tb_test GROUP BY col1, col2;
 >
 > // 가능.
-> SELECT DISTINCT col1, col2 FROM tb_test;
-> SELECT col1, MIN(col2) FROM tb_test GROUP BY col1;
+> SELECT DISTINCT col1, col2 FROM tb_test;</br>
+> SELECT col1, MIN(col2) FROM tb_test GROUP BY col1;</br>
 > SELECT MAX(col3), MIN(col3), col1, col2 FROM tb_test WHERE col2 > const GROUP BY col1, col2;
 
 ### 3) 임시 테이블을 사용하는 GROUP BY
@@ -399,6 +399,8 @@ CREATE TEMPORARY TABLE ... (
 이 경우 GROUP BY 와 동일한 방식으로 처리된다.</br>
 GROUP BY를 수행하는 쿼리에 ORDER BY 절이 없으면 정렬을 사용하지 않기 때문에 다음의 두 쿼리는 내부적으로 같은 작업을 수행한다.
 
+그 둘의 차이는, GROUP BY 는 집계가 가능하고, DISTINCT 는 특정 컬럼에 어떤 데이터가 있는지 확인하거나 중복된 데이터를 하나로 쳐서 COUNT 하고 싶을 떄 사용한다.
+
 ```sql
 SELECT DISTINCT emp_no FROM salaries;
 SELECT emp_no FROM salaries GROUP BY emp_no;
@@ -412,20 +414,38 @@ COUNT(), MIN(), MAX() 같은 집합 함수 내에서 DISTINCT 키워드가 사�
 
 집합 함수가 없는 SELECT 쿼리에서 DISTINCT 는 조회 하는 모든 칼럼의 조합이 유니크한 것들만 가져온다.</br>
 
-> DISTINCT 가 집합 함수 없이 사용된 경우와 함수 내 사용된 경우 결과 차이
->
-> SELECT DISTINCT first_name, last_name FROM employees WHERE emp_no BETWEEN 10001 AND 10200;
->
-> SELECT COUNT(DISTINCT first_name), COUNT(DISTINCT last_name)
-> FROM employees WHERE emp_no BETWEEN 10001 AND 10200;
->
-> SELECT COUNT(DISTINCT first_name, last_name)
-> FROM employees WHERE emp_no BETWEEN 10001 AND 10200;
+```sql
+EXPLAIN SELECT COUNT(DISTINCT s.salary)
+	   FROM employees e, salaries s
+       WHERE e.emp_no=s.emp_no
+       AND e.emp_no BETWEEN 100001 AND 100100;
+```
+위 쿼리는 내부적으로 COUNT(DISTINCT s.salary) 를 처리하기 위해 임시 테이블을 사용한다. 하지만 이 쿼리 실행 계획에는 임시 테이블을 사용한다는 메시지는 표기되지 않는다.</br>
+
+위 쿼리의 경우 employees 테이블과 salaries 테이블을 조인한 결과에서 salary 컬럼의 값만 저장하기 위한 임시 테이블을 만들어서 사용한다. </br>
+이 때, 임시 테이블의 salary 컬럼에는 유니크 인덱스가 생성되기에 레코드 건수가 많아진다면 상당히 느려질 수 있다.
+
+```sql
+EXPLAIN SELECT COUNT(DISTINCT s.salary), COUNT(DISTINCT e.last_name)
+	   FROM employees e, salaries s
+       WHERE e.emp_no=s.emp_no
+         AND e.emp_no BETWEEN 100001 AND 100100;
+```
+위 쿼리를 처리하기위해 s.salary 컬럼의 값을 저장하는 임시 테이블과 </br> 
+e.last_name 컬럼의 값을 저장하는 다른 임시 테이블이 필요해 전체적으로 2개의 임시 테이블을 사용한다.
+DISTINCT 처리를 위해 인덱스를 사용할 수 없기 때문에 임시 테이블이 필요하다.
+
+```sql
+mysql> SELECT COUNT(DISTICT emp_no) FROM employees;
+mysql> SELECT COUNT(DISTICT emp_no) FROM dept_emp GROUP BY dept_no;
+```
+위 쿼리 같이 인덱스된 컬럼에 대해서만 DISTINCT 처리를 수행할 때는 인덱스 풀/레인지 스캔을 하면서 임시 테이블 없이 수행할 수 있다.
+
 
 ## 6. 내부 임시 테이블 사용
 
 - MySQL 엔진이 내부 임시 테이블 (Internal temporary table) 을 사용하는 것은 일반적인 임시 테이블과 다르다. </br>
-내부적 임시 테이블은 특정 케이스르 제외하고는 처음에 메모리에 생성 되었다가 테이블 크기가 커지면 디스크로 옮겨진다.
+내부적 임시 테이블은 특정 케이스를 제외하고는 처음에 메모리에 생성 되었다가 테이블 크기가 커지면 디스크로 옮겨진다.
 - 다른 세션이나 쿼리에서는 볼수 없고 사용 불가능하다
 - 내부 임시 테이블은 쿼리 처리가 완료되면 자동으로 삭제 된다.
 
@@ -435,7 +455,7 @@ COUNT(), MIN(), MAX() 같은 집합 함수 내에서 DISTINCT 키워드가 사�
 디스크에 저장되는 임시 테이블은 트랜잭션 가능한 InnoDB 스토리지 엔진을 사용한다. </br>
 `internal_tmp_mem_storage_engine` 변수를 MEMORY 와 TempTable 중 설정. 기본 TempTable.</br>
 `temptable_max_ram` 변수로 메모리 공간 크기 설정. 기본 1GB.</br>
-임시 테이블이 커져 디스트로 기록하게 될때 `MMAP 파일`, `InnoDB 테이블` 선택해 기록한다. </br>
+임시 테이블이 커져 디스크로 기록하게 될때 `MMAP 파일`, `InnoDB 테이블` 선택해 기록한다. </br>
 temptable_use_mmap 변수로 설정. 기본 `MMAP 파일`. MMAP 파일 전환시의 오버헤드가 더 적기 떄문.</br>
 처음부터 디스크 테이블로 생성되는 경우는 `internal_tmp_disk_storage_engine` 의 설정 엔진이 사용된다. 기본 InnoDB.
 
