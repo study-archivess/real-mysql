@@ -559,13 +559,48 @@ SELECT * FROM employees WHERE last_name = 'Action' AND first_name LIKE '%sal';
 
 <img src="hyunhwaoh-images/9.10_1.png" alt="9.10_1" width="800"/>
 
+인덱스 푸시다운이 작동하지 않을때 Extra 컬럼에 Using where 가 표시된다.
+`Using where` 는 스토리지 엔진이 읽어서 반환해준 레코드가 인덱스를 사용할 수 없는 where 조건에 일치하는지 검사하는 과정을 의미한다.
+
 <img src="hyunhwaoh-images/9.10.png" alt="9.10" width="800"/>
 
+`first_name LIKE '%sal'` 조건을 누가 처리하느냐에 따라 
+인덱스에 포함된 `first_name` 칼럼을 이용할지 또는 테이블의 `first_name` 칼럼을 이용할지가 결정된다.</br>
+인덱스를 비교하는 작업은 실제 InnoDB 스토리지 엔진이 수행하지만 테이블의 레코드에서 `first_name` 조건을 비교하는 작업은 MySQL 엔진이 수행하는 작업이다.
 
-### 4) 인덱스 확장
+5.6 버전부터는 인덱스를 범위 제한 조건으로 사용하지 못한다고 하더라도 
+인덱스에 포함된 칼럼의 조건이 있다면 모두 같이 모아서 스토리지 엔진으로 전달할 수 있게 핸들러 API가 개선되었다.
+
+<img src="hyunhwaoh-images/9.11.png" alt="9.11" width="800"/>
+
+위 그림처럼 인덱스를 이용해 최대한 필터링해서 필요한 레코드 1건만 테이블 읽기를 수행하도록 한다.
+
+### 4) 인덱스 확장 use_index_extensions
+InnoDB 스토리지 엔진을 사용하는 테이블에서 세컨더리 인덱스에 자동으로 추가된 프라이머리 키를 활용할 수 있게 할지를 결정하는 옵션이다.
+
+InnoDB 스토리지 엔진은 PK 키를 클러스터링 키로 생성한다. 모든 세컨더리 인덱스는 리프노드에 PK 값을 가진다.(8.8 클러스터링 인덱스)
+
+```sql
+mysql> CREATE TABLE dept_emp (
+    emp_no INT NOT NULL, dept_no CHAR(4) NOT NULL, 
+    from_date DATE NOT NULL, to_date DATE NOT NULL, 
+    PRIMARY KEY (dept_no,emp_no), 
+    KEY ix_fromdate (from_date) 
+    ) ENGINE=InnoDB;
+```
+
+세컨더리 인덱스 `ix_fromdate`는 데이터 레코드를 찾아가기 위해 
+PK인 dept_no와 emp_no 칼럼을 순서대로(PK에 명시된 순서) 포함한다.
+그래서 최종적으로 `ix_fromdate` 인덱스는 (from_date, dept_no, emp_no) 조합으로 인덱스를 생성한 것과 흡사하게 작동할 수 있게 된다.
+
+옵티마이저는 `ix_fromdate` 인덱스의 마지막에 (dept_no, emp_no) 컬럼이 숨어있다는 것을 인지하고 실행계획을 수립한다.
+
+실행계획의 `key_len` 컬럼은 쿼리가 인덱스를 구성하는 컬럼 중 어느 컬럼까지 사용했는지를 바이트 수로 보여준다.
 
 
-### 5) 인덱스 머지
+### 5) 인덱스 머지 ndex_merge_intersection
+
+
 
 
 ### 6) 인덱스 머지 교집합 
