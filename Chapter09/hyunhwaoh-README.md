@@ -494,3 +494,168 @@ Created_tmp_tables     |0    |
 ```
 
 https://dev.mysql.com/doc/refman/8.0/en/internal-temporary-tables.html
+
+
+-------------------
+# 고급 최적화
+
+옵티마이저 옵션은 크게 조인과 관련된 옵티마이저 옵션과 옵티마이저 스위치로 구분한다.
+
+## 1. 옵티마이저 스위치 옵션
+optimizer_switch 시스템 변수를 이용해서 제어.
+
+여러개의 옵션을 세트로 묶어 설정하는 방식으로 사용한다.</br>
+(스위치 옵션: https://dev.mysql.com/doc/refman/8.0/en/switchable-optimizations.html)
+
+default, on, off 중 하나를 설정하는데 default 는 기본값 설정이다.
+
+```sql
+-- 글로벌 또는 현재 커넥션 으로 설정 가능.
+SET [GLOBAL|SESSION] optimizer_switch='index_merge=on,index_merge_union=on,...';
+```
+
+### 1) MRR(Multi-Range Read) 과 배치 키 엑세스 batched_key_access 
+- **네스티드 루프 조인** Nested Loop Join 
+  - 드라이빙 테이블 레코드를 한 건 읽어 드리븐 테이블의 일치하는 레코드를 찾아 조인을 수행하는 것.
+  - 조인처리는 MySQL 엔진이, 실제 레코드 검색은 스토리지 엔진이 담당하기 때문에, 드라이빙 테이블의 레코드를 찾으면 스토리지 엔진에서는 최적화를 수행할 수 없다.
+
+- 이 단점을 보완하기 위해 조인 대상 테이블 중 하나로부터 레코드를 읽어 조인 버퍼에 버퍼링한다.</br> 드라이빙 테이블의 레코드를 읽어 드리븐 테이블과 조인은 즉시 실행하지 않고 조인대상을 버퍼링 한다.
+- 조인 버퍼에 레코드가 다 차면 버퍼링된 레코드를 스토리지 엔진으로 한번에 요청한다. 따라서 스토리지 엔진이 데이터 페이지에 정렬된 순서로 접근해 페이지 읽기를 최소화 할 수 있다.
+- MRR 을 이용한 조인방식을 BKA 조인이라 한다.  
+- 기본적으로 비활성화 되어있는데, 단점으로 부가적 정렬작업이 필요해지만 오히려 성능이 안좋아질 수 있다.
+
+### 2) 블록 네스티드 루프 조인 block_nested_loop
+- 네스티드 루프 조인은 인덱스가 있는 조인 연결 컬럼에 모두 인덱스가 있는 경우 사용되는 조인 방식이다.
+- 마치 중첩된 반복 명령을 사용하는 것처럼 작동해서 네스티드 루프 조인이라 한다.
+- 블록 네스티드 루프 조인은 조인용으로 별도의 버퍼를 사용하며 Extra 에 "Using Join buffer" 가 표시된다.
+- 옵티마이저는 퇴대한 드리븐 테이블의 검색이 인덱스를 사용할 수 있게 실행 계획을 수립하지만, 
+어떤 방식으로도 드리븐 테이블의 풀 스캔을 피할 수 없다면 드라이빙 테이블에서 읽은 레코드를 메모리에 캐시한 후 드리븐 테이블과 이 메모리 캐시를 조인하는 형태로 처리한다.
+- 메모리 캐시. 조인버퍼 Join buffer 사용. 조인이 완료되면 조인버퍼는 바로 해제됨.
+
+
+<img src="hyunhwaoh-images/9.9_1.png" alt="9.9_1" width="800"/>
+
+<img src="hyunhwaoh-images/9.9.png" alt="9.9" width="600"/>
+
+1. ept_emp 테이블의 ix_fromdate 인덱스를 이용해(from_date>'1995-01-01') 조건을 만족하는 레코드를 검색한다.
+2. 조인에 필요한 나머지 칼럼을 모두 dept_emp 테이블로부터 읽어서 조인 버퍼에 저장한다.
+3. employees 테이블의 프라이머리 키를 이용해 (emp_no<109004) 조건을 만족하는 레코드를 검색한다.
+4. 3번에서 검색된 결과(employees)에 2번의 캐시된 조인 버퍼의 레코드(dept_emp)를 결합해서 반환한다.
+
+_** MySQL 8.0.20 부터는 블록 네스티드 루프 조인은 더이상 사용되지 않고 해시 조인 알고리즘으로 대체되어 사용된다._
+
+### 3) 인덱스 컨디션 푸시 다운
+- 5.6 버전부터는 인덱스 컨디션 푸시다운이라는 기능이 도입되었다.
+- 인덱스를 범위 제한 조건으로 사용하지 못한다고 하더라도 인덱스에 포함된 칼럼의 조건이 있다면,  
+모두 같이 모아서 스토리지 엔진으로 전달할 수 있게 핸들러 API가 개선되었다.
+
+```sql
+ALTER TABLE employees ADD INDEX ix_lastname_firstname (last_name, first_name);
+SET optimizer_switch='index_condition_pushdown=off';
+
+-- 인덱스 푸시다운 off 하고 실행
+SELECT * FROM employees WHERE last_name = 'Action' AND first_name LIKE '%sal';
+```
+
+<img src="hyunhwaoh-images/9.10_1.png" alt="9.10_1" width="800"/>
+
+<img src="hyunhwaoh-images/9.10.png" alt="9.10" width="800"/>
+
+
+### 4) 인덱스 확장
+
+
+### 5) 인덱스 머지
+
+
+### 6) 인덱스 머지 교집합 
+
+
+### 7) 인덱스 머지 합집합
+
+
+### 8) 인덱스 머지 정렬 후 합집합
+
+
+### 9) 세미조인
+
+
+### 10) 테이블 풀-아웃
+
+
+### 11) 퍼스트 매치
+
+
+### 12) 루스 스캔
+
+
+### 13) 구체화
+
+
+### 14) 중복 제거
+
+
+### 15) 컨디션 팬아웃
+
+
+### 16) 파생 테이블 머지
+
+
+### 17) 인비저블 인덱스 
+
+
+### 18) 스킵 스캔
+
+
+### 19) 해시 조인
+
+
+### 20) 인덱스 선호 정렬
+
+
+## 2. 조인 최적화 알고리즘
+
+### 1) Exhaustive 검색 알고리즘
+
+
+### 2) Greedy 검색 알고리즘
+
+
+-------------------
+# 쿼리 힌트
+
+
+## 1. 인덱스 힌트
+
+### 1) STRAIGHT_JOIN
+
+### 2) USE INDEX / FORCE INDEX / IGNORE INDEX
+
+### 3) SQL_CALC_FOUND_ROWS
+
+
+## 2. 옵티마이저 힌트
+
+### 1) 옵티마이저 힌트 종류
+
+### 2) MAX_EXECUTION_TIME
+
+### 3) SET_VAR
+
+### 4) SEMIJOIN & NO_SEMIJOIN
+
+### 5) SUBQUERY
+
+### 6) BNL & NO_BNL & HASHJOIN & NO_HASHJOIN
+
+### 7) JOIN_FIXED_ORDER & JOIN_ORDER & JOIN_PREFIX & JOIN_SUFFIX
+
+### 8) MERGE & NO_MERGE
+
+### 9) INDEX_MERGE & NO_INDEX_MERGE
+
+### 10) NO_ICP
+
+### 11) SKIP_SCAN & NO_SKIP_SCAN
+
+### 12) INDEX & NO_INDEX
