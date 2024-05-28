@@ -621,6 +621,22 @@ idx_1과 pk로 검색한 두 결과를 교집합했다는 뜻이다.
 
 <img src="hyunhwaoh-images/9.12_1.png" alt="9.12_1" width="800"/>
 
+그런데 위의 쿼리에서 세컨드 인덱스는 프라이머리 키를 포함하고 있으므로 그냥 ix_firstname 인덱스만 사용하는 것이 성능이 더 좋을것이라 생각할 수도있다.
+그러면 index_merge_intersection 을 비활성화 하면 되는데, 현재 커넥션 또는 해당 쿼리만 에도 비활성화 가능하다.
+
+```sql
+-- MySQL 서버 전체 비활성화
+SET GLOBAL optimizer_switch='index_merge_intersection=off';
+-- 현재 커넥션만 비활성화
+SET SESSION optimizer_switch='index_merge_intersection=off';
+-- 현재 쿼리에서 비활성화
+EXPLAIN
+    SELECT /*+ SET_VAR(optimizer_switch='index_merge_intersection=off') */ *
+    FROM employees
+    WHERE first_name='Georgi' AND emp_no BETWEEN 10000 AND 20000;
+
+```
+
 ### 7) 인덱스 머지 합집합 Index Merge Union Access Algorithm
 - 합집합의 경우는 2개 이상의 인덱스를 이용해서 나온 여러 결과들을 OR 연산자로 연결할 경우 실행된다.
 - 두 인덱스로 검색한 값을 합집합한다. 
@@ -635,22 +651,71 @@ OR로 연결된 경우에는 둘 중 하나라도 인덱스를 사용하지 못�
 - 동등 조건을 사용하면 정렬이 필요 없지만, BETWEEN 같은 경우는 정렬이 필요하다. 
 이렇게 합집합 연산 전에 정렬을 해야하는 경우 Extra 컬럼에 Using sort_union 문구가 표시된다.
 
+```sql
+EXPLAIN 
+    SELECT * FROM employees
+    WHERE first_name='Matt'
+        OR hire_date BETWEEN '1987-03-01' AND '1987-03-31';
+```
+
+<img src="hyunhwaoh-images/9.12_3.png" alt="9.12_3" width="800"/>
+
+MySQL 서버는 두 집합의 결과에서 중복을 제거하기 위해 각 집합을 emp_no 컬럼으로 정렬한 다음 중복 제거를 수행한다.
+
+
 ### 9) 세미조인
+다른 테이블과 실제 조인을 수행하지는 않고, 단지 다른 테이블에서 조건에 일치하는 레코드가 
+있는지 없는지만 체크하는 형태의 쿼리를 세미 조인(Semi-Join)이라고 한다.
+
+```sql
+SELECT *
+    FROM employees e 
+    WHERE e.emp_no IN 
+        (SELECT de.emp_no FROM dept_emp de WHERE de.from_date='1995-01-01');
+```
+쿼리를 보면 dept_emp 테이블을 조회하는 서브쿼리 부분이 먼저 실행되고 다음 employees 테이블에서 일치하는 레코드만 검색할 것으로 기대했다.
+
+하지만 실제는 employees 테이블을 풀스캔 하면서 서브 쿼리의 조건에 일치하는지 비교한다.
+
+<img src="hyunhwaoh-images/9.12_4.png" alt="9.12_4" width="800"/>
+
+따라서 최적화가 필요하다
+
+세미조인 Semi-join `=, IN` 형태 쿼리에서는 다음의 3가지 최적화 방법.
+- 세미조인 최적화
+- IN-to-EXISTS 최적화
+- MATERIALIZATION 최적화
+
+안티 세미 조인 Anti Semi-join 쿼리 최적화
+- IN-to-EXISTS 최적화
+- MATERIALIZATION 최적화
+
+가장 최근 도입된 **세미조인 최적화**
+- Table Pull-out
+- Duplicate Weed-out
+- First Match
+- Loose Scan
+- Materialization
+
+Table Pull-out 최적화 전략은 항상 세미조인 보다는 좋은 성능을 내기 때문에 별도로 제어하는 옵티마이저 옵션을 제공하지 않는다.
+
+Fist Match 와 Loose Scan 전략은 firstmatch와 loosescan 옵션으로 사용여부를 결정할 수 있고,
+
+Duplicate Weed-out 과 Materialization 전략은 materialization 스위치로 사용 여부를 선택할 수 있다.
+
+### 10) 테이블 풀-아웃 Table Pull-out
 
 
-### 10) 테이블 풀-아웃
+### 11) 퍼스트 매치 First Match
 
 
-### 11) 퍼스트 매치
+### 12) 루스 스캔 Loose Scan
 
 
-### 12) 루스 스캔
+### 13) 구체화 Materialization
 
 
-### 13) 구체화
-
-
-### 14) 중복 제거
+### 14) 중복 제거 Duplicate Weed-out
 
 
 ### 15) 컨디션 팬아웃
