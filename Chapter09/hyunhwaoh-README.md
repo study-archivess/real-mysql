@@ -598,19 +598,42 @@ PK인 dept_no와 emp_no 칼럼을 순서대로(PK에 명시된 순서) 포함한
 실행계획의 `key_len` 컬럼은 쿼리가 인덱스를 구성하는 컬럼 중 어느 컬럼까지 사용했는지를 바이트 수로 보여준다.
 
 
-### 5) 인덱스 머지 ndex_merge_intersection
+### 5) 인덱스 머지 Index Merge
+대부분 옵티마이저는 테이블 당 하나의 인덱스를 사용하도록 실행계획을 수립한다.</br>
+인덱스 머지 실행계획을 사용하면 하나의 테이블에 2개 이상 인덱스를 이용해 처리 가능하다.
 
+하나의 인덱스만 사용해 작업범위를 줄이는 것이 일반적이지만, 
+쿼리에 각 조건이 서로 다른 인덱스를 사용할 수 있고 
+조건을 만족하는 레코드 건수가 많을 것으로 예상 될 때 MySQL 서버는 인덱스 머지 실행 계획을 선택한다.
 
+인덱스 머지 실행계획은 결과를 어떤 방식으로 병합할지에 따라 세가지로 나뉜다.
+- 인덱스 머지 교집합 Index Merge Intersection Access Algorithm
+- 인덱스 머지 합집합 Index Merge Union Access Algorithm
+- 인덱스 머지 정렬 후 합집합 Index Merge Sort-Union Access Algorithm
 
+(참고: https://dev.mysql.com/doc/refman/8.0/en/index-merge-optimization.html)
 
-### 6) 인덱스 머지 교집합 
+### 6) 인덱스 머지 교집합 Index Merge Intersection Access Algorithm
+- 쿼리가 여러개의 인덱스를 각각 검색해서 그 결과의 교집합만 반환한다.
+- 2개 이상의 인덱스를 이용해서 나온 여러 결과들을 AND 연산자로 연결할 경우 실행된다.
+- 실행계획의 Extra 칼럼에 Using intersect(idx_1, primary) 표시된다면, 
+idx_1과 pk로 검색한 두 결과를 교집합했다는 뜻이다. 
 
+<img src="hyunhwaoh-images/9.12_1.png" alt="9.12_1" width="800"/>
 
-### 7) 인덱스 머지 합집합
+### 7) 인덱스 머지 합집합 Index Merge Union Access Algorithm
+- 합집합의 경우는 2개 이상의 인덱스를 이용해서 나온 여러 결과들을 OR 연산자로 연결할 경우 실행된다.
+- 두 인덱스로 검색한 값을 합집합한다. 
+- 중복되는 데이터는 (세컨더리 인덱스는 이미 PK로 정렬되어 있음) 우선순위 큐 알고리즘을 통해 합치면서 중복을 제거한다.
+- 두 조건이 AND로 연결된 경우에는 두 조건 중 하나라도 인덱스를 사용할 수 있으면 인덱스 레인지 스캔으로 쿼리가 실행되지만
+OR로 연결된 경우에는 둘 중 하나라도 인덱스를 사용하지 못하면 풀 테이블 스캔으로 처리된다.
 
+<img src="hyunhwaoh-images/9.12_2.png" alt="9.12_2" width="800"/>
 
-### 8) 인덱스 머지 정렬 후 합집합
-
+### 8) 인덱스 머지 정렬 후 합집합 Index Merge Sort-Union Access Algorithm
+- 별도의 정렬이 필요하면 Sort union 알고리즘을 사용한다. 
+- 동등 조건을 사용하면 정렬이 필요 없지만, BETWEEN 같은 경우는 정렬이 필요하다. 
+이렇게 합집합 연산 전에 정렬을 해야하는 경우 Extra 컬럼에 Using sort_union 문구가 표시된다.
 
 ### 9) 세미조인
 
