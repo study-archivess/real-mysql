@@ -704,19 +704,140 @@ Fist Match 와 Loose Scan 전략은 firstmatch와 loosescan 옵션으로 사용�
 Duplicate Weed-out 과 Materialization 전략은 materialization 스위치로 사용 여부를 선택할 수 있다.
 
 ### 10) 테이블 풀-아웃 Table Pull-out
+ㅅㅔ미 조인의 서브쿼리에 사용된 테이블을 아우터 쿼리로 끄집어낸 후 쿼리를 조인 쿼리로 재작성하는 형태의 최적화이다.
 
+서브쿼리 최적화 도입전 수동으로 쿼리를 튜닝하던 대표적인 방법이다.
+
+<img src="hyunhwaoh-images/9.12_5.png" alt="9.12_5" width="800"/>
+
+실행계획으로 볼때 employee 테이블 Extra 칼럼에는 아무것도 출력되지 않는다. 
+
+테이블 풀아웃 최적화가 사용되었는지 더 정확히 확인하는 방법은 EXPLAIN 명령 후 SHOW WARNING 명령으로 옵티마이저가 재작성한 쿼리를 살펴보는것이다.
+
+<img src="hyunhwaoh-images/9.12_6.png" alt="9.12_6" width="800"/>
+
+IN 쿼리 대신 JOIN 으로 쿼리가 재작성되었다.
+
+### Table pullout 최적화의 제약사항
+- 세미 조인 서브쿼리에서만 사용 가능하다.
+- 서브쿼리 부분이 UNIQUE 인덱스나 프라이머리 키 룩업으로 결과가 1건인 경우에만 사용 가능하다.
+- Table pullout이 적용된다고 하더라도 기존 쿼리에서 가능했던 최적화 방법이 사용 불가능한 것은 아니므로 
+MySQL에서는 가능하다면 Table pullout 최적화를 최대한 적용한다.
+- 서브쿼리의 테이블을 아우터 쿼리로 가져와서 조인으로 풀어쓰는 최적화를 수행하는데, 
+만약 서브쿼리의 모든 테이블이 아우터 쿼리로 끄집어 낼 수 있다면 서브쿼리 자체는 없어진다.
+- MySQL에서는 “최대한 서브쿼리를 조인으로 풀어서 사용해라”라는 튜닝 가이드가 많은데, 
+Table pullout 최적화는 사실 이 가이드를 그대로 실행하는 것이다. 이제부터는 서브쿼리를 조인으로 풀어서 사용할 필요가 없다.
 
 ### 11) 퍼스트 매치 First Match
+IN(subquery) 형태의 세미 조인을 EXISTS(subquery) 형태로 튜닝한 것과 비슷한 방법으로 실행된다.
 
+<img src="hyunhwaoh-images/9.13.png" alt="9.13" width="800"/>
+
+```sql
+EXPLAIN
+    SELECT * FROM employees e
+    WHERE e.first_name='Matt'
+    AND e.emp_no IN (
+            SELECT t.emp_no
+            FROM titles t
+            WHERE t.from_date BETWEEN '1995-01-01' AND '1995-01-30'
+    );
+```
+
+<img src="hyunhwaoh-images/9.13_1.png" alt="9.13_1" width="800"/>
+
+실행계획에 Extra 칼럼에 FristMatch(e)라는 문구가 출력된다.
+
+First Match 는 서브쿼리가 아니라 조인으로 풀어서 실행하면서 일치하는 첫 번째 레코드만 검색하는 최적화를 실행한다.
+
+실행 계획 순서
+1. 먼저 employees 테이블에서 first_name 칼럼의 값이 ‘Matt’인 사원의 정보를 ix_firstname 인덱스를 이용 해 레인지 스캔으로 읽는다.
+2. first_name이 Matt으로 검색된 사원 번호를 이용해 titles테이블을 조인해 from_date가 t.from_ date BETWEEN '1995-01-01' AND '1995-01-30' 조건을 만족하는 레코드를 찾는다.
+이때 일치하는 첫 번째 레코드를 찾는다면 해당 사원 번호에 대해 더 이상 titles 테이블을 검색하지 않고 즉시 레코드를 최종 결과로 반환한다.
+
+여러 테이블이 조인되는 경우 원래 쿼리에는 없던 동등 조건을 옵티마이저가 자동으로 추가하는 형태의 최적화가 실행되기도 한다.
+
+IN-to-EXISTS 최적화와 달리 FirstMatch에서는 조인 형태로 처리되기 때문에 서브쿼리뿐만 아니라 아우터 쿼리의 테이블까지 전파 가능하므로 
+더 많은 조건이 주어질 수 있어 더 나은 실행계획이 가능하다.
+
+#### 제한사항 및 특성
+- 서브쿼리에서 하나의 레코드만 검색되면 더이상의 검색을 멈추는 단축 실행 경로이기 때문에 FirstMatch 최적화에서 서브쿼리는 그 서브쿼리가 참조하는 모든 아우터 테이블이 먼저 조회된 이후에 실행 된다.
+- 최적화가 사용되면 실행 계획의 Extra 칼럼에 FirstMatch(table-N) 가 표시 된다.
+- 상관 서브쿼리(Correlated subquery)에서도 사용 가능하다.
+= GROUP BY나 집합 함수가 사용된 서브쿼리의 최적화에는 사용 불가하다.
 
 ### 12) 루스 스캔 Loose Scan
+인덱스를 사용하는 GROUP BY 최적화 방법에서 살펴본 루스 인덱스 스캔과 비슷한 읽기 방식을 사용한다.
 
+dept_emp 테이블에 존재하는 모든 부서 번호에 대해 정보를 읽어오는 쿼리.
+```sql
+EXPLAIN
+    SELECT * FROM departments d
+    WHERE d.dept_no IN ( SELECT de.dept_no FROM dept_emp de );
+```
+
+<img src="hyunhwaoh-images/9.14.png" alt="9.14" width="800"/>
+
+`dept_emp` 테이블의 프라이머리 키를 루스 인덱스 스캔으로 유니크한 `dept_no` 만 읽으면 중복된 레코드까지 제거하면서 효율적으로 서브쿼리 부분을 실행할 수 있다.
+
+<img src="hyunhwaoh-images/9.14_1.png" alt="9.14_1" width="800"/>
+
+_처음에 옵티마이저 스위치를 변경하지 않으면 
+FirstMatch -> Materialization -> Duplicate Weed-out 방식을 선택하고 
+모두 off 하면 Loose Scan 방식으로 수행한다._
 
 ### 13) 구체화 Materialization
+세미 조인에 사용된 서브쿼리를 통째로 구체화(내부 임시테이블 생성) 해서 쿼리를 최적화한다.
 
+```sql
+EXPLAIN
+SELECT * FROM employees e
+WHERE e.emp_no IN 
+      (SELECT de.emp_no FROM dept_emp de WHERE de.from_date='1995-01-01');
+```
+
+<img src="hyunhwaoh-images/9.14_2.png" alt="9.14_2" width="800"/>
+
+실행계획 select_type 컬럼에 MATERIALIZED 표시된다.
+
+dept_emp 테이블을 읽는 서브쿼리가 먼저 실행되어 임시 테이블<subquery2> 가 만들어졌다.
+
+최종적으로 서브쿼리 임시테이블<subquery2> 와 employees 테이블을 조인해서 결과를 반환한다. 
+
+구체화 최적화는 서브쿼리 내 GROUP BY 절이 있어도 사용할 수 있다.
+
+#### 제한사항 및 특성
+- IN(subquery)에서 서브쿼리는 상관 서브쿼리(Correlated subquery)가 아니어야 한다.
+- 서브쿼리는 GROUP BY나 집합 함수들이 사용돼도 구체화를 사용할 수 있다.
+- 구체화가 사용된 경우에는 내부 임시 테이블이 사용된다.
+- 옵티마이저 스위치 semijoin 옵션과 materialization 옵션이 활성화된 경우에만 사용된다.
 
 ### 14) 중복 제거 Duplicate Weed-out
+세미 조인 서브쿼리를 일반적인 INNER JOIN 쿼리로 바꿔서 실행하고 마지막에 중복된 레코드를 제거하는 방법으로 처리된다.
 
+```sql
+EXPLAIN
+    SELECT * FROM employees e
+    WHERE e.emp_no IN 
+          (SELECT s.emp_no FROM salaries s WHERE s.salary>150000);
+```
+
+<img src="hyunhwaoh-images/9.15.png" alt="9.15" width="800"/>
+
+#### 실행 순서
+1. salaries 테이블의 인덱스를 스캔해서 salary가 150000보다 큰 사원을 검색해 employees 테이블 조인을 실행
+2. 조인된 결과를 임시 테이블에 저장
+3. 임시 테이블에 저장된 결과에서 emp_no 기준으로 중복 제거
+4. 중복을 제거하고 남은 레코드를 최종적으로 반환
+
+<img src="hyunhwaoh-images/9.15_1.png" alt="9.15_1" width="800"/>
+
+_옵티마이저 스위치를 변경 firstscan off 로 해야한다._
+
+#### 제약사항 및 득성 
+- 서브쿼리가 상관 서브쿼리라고 하더라도 사용할 수 있는 최적화다.
+- Duplicate Weedout은 서브쿼리의 테이블을 조인으로 처리하기 때문에 최적화할 수 있는 방법이 많다
+- 서브쿼리가 GROUP BY나 집합 함수가 사용된 경우에는 사용될 수 없다.
 
 ### 15) 컨디션 팬아웃
 
