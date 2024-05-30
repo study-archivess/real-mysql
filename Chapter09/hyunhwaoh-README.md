@@ -840,22 +840,118 @@ _옵티마이저 스위치를 변경 firstscan off 로 해야한다._
 - 서브쿼리가 GROUP BY나 집합 함수가 사용된 경우에는 사용될 수 없다.
 
 ### 15) 컨디션 팬아웃
+테이블 조인시 어떤 순서로 조인되는지에 따라 성능에 큰 영향을 미친다. 옵티마이저는 여러 테이블이 조인되는 경우 
+일치하는 레코드 건수가 적은 순서대로 조인을 실행한다.
 
+컨디션 팬아웃을 사용하면 조인 시 미리 칼럼 조건의 레코드 비율을 계산하여 필터링 한다.
 
-### 16) 파생 테이블 머지
+condition_fanout_filter 가 활성화 되어있고, 
+WHERE 조건절에 사용된 컬럼에 인덱스가 있거나, 히스토그램이 존재하는 경우에는
+레코드의 비율 filtered 값을 예측한다.
 
+### 옵티마이저가 실행계획을 수립할때 사용가능 방식을 선택하는 순서
+실행계획을 수립할 떄 테이블이나 인덱스의 통계 정보만 사용하는 것이 아니라 다음의 순서대로 사용 가능한 방식을 선택한다.
 
-### 17) 인비저블 인덱스 
+1. 레인지 옵티마이저 Range optimizer 를 이용한 예측
+2. 히스토그램을 이용한 예측
+3. 인덱스 통계를 이용한 예측
+4. 추측에 기반한 예측(Guesstimates)
 
+### 16) 파생 테이블 머지 (derived_merge)
+예전에는 FROM 절에 사용된 서브쿼리는 먼저 실행해서 그 결과를 임시 테이블로 만든 다음 외부 쿼리 부분을 처리했다.
+derived_merge 최적화 옵션은 임시 테이블 최적화 활성화 여부를 결정한다.
 
-### 18) 스킵 스캔
+```sql
+EXPLAIN
+    SELECT * FROM (
+        SELECT * FROM employees
+        WHERE first_name='Matt'
+    ) derived_table
+    WHERE derived_table.hire_date='1986-04-03';
+```
 
+이렇게 사용된 서브 쿼리를 파생 테이블 derived table 이라 한다.
+실행계획 `select_type` 에 `DERIVED` 가 표시된다.
+
+파생 테이블 머지에 의해 서브쿼리 부분이 외부쿼리로 병합, 쿼리가 다음과 같이 재작성된다.
+```sql
+SELECT
+	employees.employees.emp_no AS emp_no,
+	employees.employees.birth_date AS birth_date,
+	employees.employees.first_name AS first_name,
+	employees.employees.last_name AS last_name,
+	employees.employees.gender AS gender,
+	employees.employees.hire_date AS hire_date
+FROM employees.employees
+WHERE (
+	(employees.employees.hire_date = DATE'1986-04-03')
+	AND (employees.employees.first_name 'Matt')
+)
+```
+
+다음 조건의 경우는 자동으로 바꿔주지 않으므로,
+수동으로 서브쿼리를 외부쿼리로 병합하는 쿼리로 바꿔주는것이 좋다.
+- SUM() 또는 MIN(), MAX() 같은 집계 함수와 윈도우 함수가 사용된 서브쿼리
+- DISTINCT가 사용된 서브쿼리
+- GROUP BY나 HAVING이 사용된 서브쿼리
+- LIMIT이 사용된 서브쿼리
+- UNION 또는 UNION ALL을 포함하는 서브쿼리
+- SELECT 절에 사용된 서브쿼리
+- 값이 변경되는 사용자 변수가 사용된 서브쿼리
+
+### 17) 인비저블 인덱스 use_invisible_indexes
+인덱스의 가용 상태를 제어할 수 있는 기능이다. 인덱스를 삭제하지 않고도 해당 인덱스를 사용하지 못하게 제어한다.
+
+```sql
+ALTER TABLE ... ALTER INDEX ... [VISIBLE | INVISIBLE]
+```
+
+### 18) 스킵 스캔 skip_scan
+8.0 부터 인덱스 스킵 스캔 최적화가 도입되었고, 
+인덱스의 선행칼럼이 조건절에 사용되지 않더라도 후행 칼럼의 조건만으로도 인덱스를 사용할 수 있게 되었다.
+인덱스 선행 칼럼이 다양한 값을 가지는 경우보다 적은 종류의 값을 가질때 인덱스 스킵 스캔 최적화를 사용한다.
+
+활성화 방법
+```sql
+-- 현재 세션에서 활성화
+SET optimizer_switch='skip_scan=on';
+--특정 테이블과 인덱스에 대해 힌트를 사용
+SELECT /*+ SKIP_SCAN(employees ix_gender_birthdate)*/ COUNT(*)
+FROM employees
+WHERE birth_date>='1965-02-01';
+```
 
 ### 19) 해시 조인
+해시조인은 해시 테이블을 이용해 양쪽 테이블에서 Join 하게 될 레코드를 찾는 방식이다.</br> 
 
+해시 조인은 두 단계로 진행이 된다.
 
-### 20) 인덱스 선호 정렬
+- Build : 작은 테이블(small row set을 갖는 테이블)의 조인 컬럼을 키 값으로, 해시 테이블을 만든다.
+- Probe : 큰 테이블의 조인 컬럼을 키 값으로 해시 테이블을 탐색하여 조인한다.
 
+1. 옵티마이저는 빌드 테이블 레코드를 읽어 메모리에 해시 테이블을 생성한다. (join buffer 사용)
+2. 프로브 테이블을 스캔하면서 메모리에 생성된 해시 테이블에서 레코드를 찾아 결과로 반환한다.
+3. 만약 버퍼 공간이 부족하면 청크로 분리해 메모리에 저장, 해시 테이블을 구축하고 해시조인을 처리한다.
+
+네스티드 루프 조인보다 해시 조인의 성능이 더 좋다. </br>
+해시 조인은 첫번째 레코드를 찾는 시간이 더 걸리지만 최종 레코드를 찾는데 더 빠르다. 최고 스루풋 전략.</br>
+네스티드 루프 조인은 첫 레코드를 찾는데 빠르지만 최종레코드 찾는데 더 오래걸린다. 최고 응답속도 전략.
+
+MySQL이 범용 DBMS로써 온라인 트랜젝션 처리를 위해 쓰이는 용도가 많아 스루풋보다 응답속도가 더 중요하다.
+그래서 해시조인은 주로 조인 조건의 칼럼이 인덱스에 없거나 조인 대상 테이블 중 일부 레코드 건수가 적은 경우 등에만 사용하도록 설계되어있다.
+
+실행계획 Extra 칼럼에서 `hash join`이 표시된다.
+
+### 20) 인덱스 선호 정렬 prefer_ordering_index
+ORDER BY, GROUP BY 를 인덱스를 사용해 처리 가능한 경우 실행계획에서 
+이 인덱스의 가중치를 높이 설정해서 실행할 수 있다.
+
+```sql
+-- 현재 커넥션에서만 옵션 비활성화
+SET SESSION optimizer_switch='prefer_ordering_index=OFF';
+-- 현재 쿼리에 대해서 비활성화
+SELECT /*+ SET VAR(optimizer_sswitch='prefer_ordering_index=OFF') */ ... ;
+```
 
 ## 2. 조인 최적화 알고리즘
 
