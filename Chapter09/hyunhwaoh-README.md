@@ -955,47 +955,197 @@ SELECT /*+ SET VAR(optimizer_sswitch='prefer_ordering_index=OFF') */ ... ;
 
 ## 2. 조인 최적화 알고리즘
 
-### 1) Exhaustive 검색 알고리즘
+```sql
+SELECT *
+FROM t1, t2, t3, t4
+WHERE ... ;
+```
+4개 테이블은 조인하는 쿼리
 
+### 1) Exhaustive 검색 알고리즘
+5.0 이전 버전에서 사용되던 조인 최적화 기법이다.
+
+**FROM 절에 명시된 모든 테이블 조합**에 대해 실행 계획 비용을 계산해 최적의 조합을 찾는 방법이다.
+
+<img src="hyunhwaoh-images/9.20.png" alt="9.20" width="600"/>
+
+테이블이 20개하면  20!(Factorial, 3628800) 많은 시간이 소모된다.
 
 ### 2) Greedy 검색 알고리즘
+5.0 부터 도입된 조인 최적화 기법.
 
+<img src="hyunhwaoh-images/9.21.png" alt="9.21" width="600"/>
+
+1. 전체 N개의 테이블 중에서 `optimizer_search_depth` 시스템 설정 변수에 정의된 개수의 테이블로 가능한 조인 조합을 생성
+2. 1번에서 생성된 조인 조합 중에서 최소 비용의 실행 계획 하나를 선정
+3. 2번에서 선정된 실행 계획의 첫 번째 테이블을 부분 실행 계획(실행 계획 완료 대상) 의 첫 번째 테이블로 선정
+4. 전체 N-1개의 테이블 중(3번에서 선택된 테이블 제외)에서 `optimizer_search_depth` 시스템 설정 변수에 정의된 개수의 테이블로 가능한 조인 조합을 생성
+5. 4번에서 생성된 조인 조합들을 하나씩 3번에서 생성된 부분 실행 계획에 대입해 실행 비용을 계산
+6. 5번의 비용 계산 결과, 최적의 실행 계획에서 두 번째 테이블을 3번에서 생성된 부분 실행 계획의 두 번째 테이블로 선정
+7. 남은 테이블이 모두 없어질 때까지 4~6번까지의 과정을 반복 실행하면서 부분 실행 계획에 테이블의 조인 순서를 기록
+8. 최종적으로 부분 실행 계획이 테이블의 조인 순서로 결정됨
+
+- `optimizer_search_depth` 시스템 변수는 Greedy 검색 알고리즘과 Exhaustive 검색 알고리즘 중에서 어떤 알고리즘을 사용할지 결정하는 시스템 변수이다.
+  - 조인에 사용된 테이블의 개수가 설정 값보다 크다면 설정 값 만큼의 테이블은 Exhaustive 검색이 사용되고 나머지 테이블은 Greedy 검색이 사용된다. 설정값보다 작으면 Exhaustive 검색 사용됨.
+  - 0 은 Greedy 검색 조인 검색 테이블 개수를 옵티마이저가 자동 결정.
+- `optimizer_prune_level` 시스템 변수는 5.0부터 추가된 Heuristic 검색이 작동하는 방식을 제어한다.
 
 -------------------
 # 쿼리 힌트
 
+옵티마이저에게 쿼리의 실행 계획을 어떻게 수립해야 한지 알려줄 수 있는 방법으로 힌트를 제공한다.
 
 ## 1. 인덱스 힌트
+인덱스 힌트들은 옵티마이저 힌트가 도입되기 전에 사용되던 기능들이다. </br>
+일반적으로 SQL 의 일부 형태로 자주 사용되었는데, ANSI-SQL 표준문법이 아니다. </br>
+옵티마이저 힌트는 다른 RDBMS에서 주석으로 해석되므로 표준문법을 준수한다. </br>
+
+#### 인덱스 힌트는 SELECT 명령과 UPDATE 명령에서만 사용할 수 있다.
 
 ### 1) STRAIGHT_JOIN
+SELECT, UPDATE, DELETE 쿼리에서 여러 개의 테이블이 조인되는 경우 조인 순서를 고정하는 역할을 한다
+
+```sql
+EXPLAIN SELECT * STRAIGHT_JOIN 
+FROM employees e, dept_emp de, departments d 
+WHERE e.emp_no=de.emp_no AND d.dept_no=de.dept_no;
+```
+
+departments 테이블을 드라이빙 테이블로 선택하고 두번째 dept_emp 마지막 employees 테이블을 읽는다.
+
+#### 순서를 조정 
+- 임시 테이블(인라인 뷰 또는 파생된 테이블)과 일반 테이블의 조인
+  - 이 경우에는 거의 일반적으로 임시 테이블을 드라이빙 테이블로 선정하는 것이 좋다
+  - 일반 테이블의 조인 칼럼에 인덱스가 없는 경우에는 레코드 건수가 작은 쪽을 먼저 읽도록 드라이빙으로 선택하는 것이 좋은데, 
+  - 대부분 옵티마이저가 적절한 조인 순서를 선택하기 때문에 쿼리를 작성할 때부터 힌트를 사용할 필요는 없다.
+- 임시 테이블끼리 조인
+  - 임시 테이블(서브쿼리로 파생된 테이블)은 항상 인덱스가 없기 때문에 어느 테이블을 먼저 드라이빙으로 읽어도 무관하므로 크기가 작은 테이블을 드라이빙으로 선택해주는 것이 좋다.
+- 일반 테이블끼리 조인
+  - 양쪽 테이블 모두 조인 칼럼에 인덱스가 있거나 양쪽 테이블 모두 조인 칼럼에 인덱스가 없는 경우에는 레코드 건수가 적은 테이블을 드라이빙으로 선택해주는 것이 좋음
+  - 그 이외의 경우에는 조인 칼럼에 인덱스가 없는 테이블을 드라이빙으로 선택하는 것이 좋다.
+
 
 ### 2) USE INDEX / FORCE INDEX / IGNORE INDEX
+사용하려는 테이블 뒤에 명시한다.
+
+인덱스가 여러개 존재하는 경우 강제로 특정 인덱스를 사용하도록 하는 힌트이다.
+
+- USE INDEX
+  - 가장 자주 사용되는 인덱스 힌트
+  - MySQL 옵티마이저에게 특정 테이블의 인덱스를 사용하도록 권장하는 힌트
+  - 대부분의 경우 인덱스 힌트가 주어지면 옵티마이저는 사용자의 힌트를 채택한다
+  - 하지만 항상 그 인덱스를 사용하는 것은 아니다.
+- FORCE INDEX
+  - USE INDEX 와 비슷하지만, 그보다 옵티마이저에게 미치는 영향이 더 강하다.
+- IGNORE INDEX
+  - 특정 인덱스를 사용하지 못하게 하는 용도로 사용하는 힌트
+  - 옵티마이저가 풀 테이블 스캔을 사용하도록 유도하기 위해 IGNORE INDEX 힌트를 사용할 수도 있다.
 
 ### 3) SQL_CALC_FOUND_ROWS
+SQL_CALC_FOUND_ROWS 힌트가 포함된 쿼리의 경우에는 LIMIT을 만족하는 수만큼의 레코드를 찾았다고 하더라도 끝까지 검색을 수행한다.
 
+```sql
+SELECT SQL_CALC_FOUND_ROWS *
+FROM employees
+WHERE first_name='Georgi'
+LIMIT 0, 20;
+
+SELECT FOUND_ROWS() AS total_record_count;
+```
+이 경우 FOUND_ROWS() 함수의 실행을 위해 또 한 번의 쿼리가 필요하기 때문에 쿼리를 2번 실행해야 한다.
+SQL_CALC_FOUND_ ROWS 힌트 때문에 조건을 만족하는 레코드 전부를 읽어야 해서 랜덤 I/O가 발생하게 된다.</br>
+쿼리나 인덱스 튜닝해서 왠만하면 쓰지않는것이 좋다.
 
 ## 2. 옵티마이저 힌트
 
 ### 1) 옵티마이저 힌트 종류
 
+#### 영향 범위에 따른 4개의 그룹
+- 인덱스: 특정 인덱스의 이름을 사용할 수 있는 옵티마이저 힌트
+- 테이블: 특정 테이블의 이름을 사용할 수 있는 옵티마이저 힌트
+- 쿼리 블록: 특정 쿼리 블록(서브쿼리 영역)에 사용할 수 있는 옵티마이저 힌트로서, 
+특정 쿼리 블록의 이름을 명시하는 것이 아니라 힌트가 명시된 쿼리 블록에 대해서만 영향을 미치는 옵티마이저 힌트
+- 글로벌(쿼리 전체): 전체 쿼리에 대해서 영향을 미치는 힌트
+
 ### 2) MAX_EXECUTION_TIME
+쿼리의 최대 실행 시간을 설정하는 힌트. 밀리초 단위.
+
+`/*+ MAX_EXECUTION_TIME(100) */`
 
 ### 3) SET_VAR
+특정 시스템 변수를 조정할 수 있는 힌트.
+
+`/*+ SET_VAR(optimizer_switch='index_merge_intersection=off')*/`
 
 ### 4) SEMIJOIN & NO_SEMIJOIN
+_9.3.1.9 semijoin 세미조인 참고_
+
+| 최적화 전략                    | 힌트              |
+|:--------------------------|:----------------|
+| SEMIJOIN(DUPSWEEDOUT)     | First Match     |
+| SEMIJOIN(FIRSTMATCH)      | Loose Scan      |
+| SEMIJOIN(LOOSESCAN)       | Materialization |
+| SEMIJOIN(MATERIALIZATION) | Table           |
+| Pull-out                  | 없음              |
+
+사용법 예시
+```sql
+EXPLAIN
+SELECT /*+ SEMIJOIN(@sebq1 MATERIALIZATION )*/ *
+FROM department d 
+WHERE d.dept_no IN 
+    (SELECT /*+ QB_NQME(subq1)*/ de.dept_no FROM dept_emp de);
+```
+--> 이름 `subq1` 을 가진 서브쿼리에 세미조인 힌트 Materialization 적용.
 
 ### 5) SUBQUERY
+서브쿼리 최적화 하기위한 힌트.
+
+|최적화 전략 |힌트|
+|:--|:--|
+|IN-to-EXISTS| SUBQUERY(INTOEXISTS)|
+|Materialization| SUBQUERY(MATERIALIZATION)|
 
 ### 6) BNL & NO_BNL & HASHJOIN & NO_HASHJOIN
+MySQL 8.0.18 버전부터는 새롭게 도입된 해시 조인 알고리즘이 블록 네스티드 루프 조인을 대체하도록 개선됐다.
+8.0.20 버전과 그 이후 버전에서는 BNL 힌트를 사용하면 해시 조인을 사용하도록 유도하는 힌트로 용도가 변경되었다.
 
 ### 7) JOIN_FIXED_ORDER & JOIN_ORDER & JOIN_PREFIX & JOIN_SUFFIX
+#### 일부만 조인 순서를 강제하고 나머지는 옵티마이저에게 순서를 결정하도록 하는 힌트
+
+- JOIN_FIXED_ORDER: STRAIGHT_JOIN 힌트와 동일하게 FROM 절의 테이블 순서대로 조인을 실행하게 하는 힌트
+- JOIN_ORDER: FROM 절에 사용된 테이블의 순서가 아니라 힌트에 명시된 테이블의 순서대로 조인을 실행하는 힌트
+- JOIN_PREFIX: 조인에서 드라이빙 테이블만 강제하는 힌트
+- JOIN_SUFFIX: 조인에서 드리븐 테이블(가장 마지막에 조인돼야 할 테이블들)만 강제하는 힌트
 
 ### 8) MERGE & NO_MERGE
+#### 내부 임시 테이블을 사용하지 않게 FROM 절의 서브쿼리를 외부 쿼리와 병합 최적화하는 힌트
+때로는 MySQL 옵티마이저가 내부 쿼리를 외부 쿼리와 병합하는 것이 나을 수도 있고 (MERGE), 
+때로는 내부 임시 테이블을 생성하는 것이 더 나은 선택일 수도 있다.(NO_MERGE)
 
 ### 9) INDEX_MERGE & NO_INDEX_MERGE
+#### 하나의 테이블에 대해 여러 개의 인덱스를 동시에 사용하는 것, 인덱스 머지를 사용하거나 사용하지 않으려 할때 사용하는 힌트
 
 ### 10) NO_ICP
+#### 인덱스 컨디션 푸시다운 최적화를 비활성화하는 힌트
+기본적으로 인덱스 푸시 다운을 사용해 성능을 최적화 하지만, 
+쿼리 검색 범위에 따라 비활성화 하여 유연하게 실행계획을 선택하게 할 수 있다.
 
 ### 11) SKIP_SCAN & NO_SKIP_SCAN
+#### 인덱스 스킵 스캔 사용 설정 하는 힌트
+조건이 누락된 선행 칼럼이 가지는 유니크한 값의 개수가 많아진다면 인덱스 스킵 스캔의 성능은 오히려 더 떨어지므로, 사용하지 않게 할 수 있다.
 
 ### 12) INDEX & NO_INDEX
+#### 인덱스 힌트를 대체하는 옵티마이저 힌트
+테이블 명과 인덱스 이름을 함께 명시해야한다.
+
+| 인덱스 힌트                    | 옵티마이저 힌트  |
+|---------------------------|-----------|
+| USE INDEX                 |INDEX|
+| USE INDEX FOR GROUP BY    |GROUP_INDEX|
+| USE INDEX FOR ORDER BY    |ORDER_INDEX|
+| IGNORE INDEX              |NO_INDEX|
+| IGNORE INDEX FOR GROUP BY |NO_GROUP_INDEX|
+|IGNORE INDEX FOR ORDER BY|NO_ORDER_INDE|
+
+
